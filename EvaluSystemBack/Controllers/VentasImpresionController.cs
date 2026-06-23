@@ -70,13 +70,18 @@ public class VentasImpresionController : ControllerBase
     public async Task<ActionResult<DashboardSummaryDto>> GetDashboard()
     {
         var ventas = await Query().AsNoTracking().ToListAsync();
+        var today = DateTime.Today;
+        var monthStart = new DateTime(today.Year, today.Month, 1);
+        var nextMonthStart = monthStart.AddMonths(1);
+        var ventasDelDia = ventas.Where(x => x.FechaCreacion.Date == today).ToList();
+        var ventasDelMes = ventas.Where(x => x.FechaCreacion >= monthStart && x.FechaCreacion < nextMonthStart).ToList();
         var vendedores = await _context.Personas
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => NombrePersona(x));
 
-        var pedidosImpresos = ventas.Count(x => IsPrinted(x.EstadoVenta?.Nombre) || x.Detalles.Any(d => d.CheckImpresion == true));
-        var pedidosEntregados = ventas.Count(x => IsDelivered(x.EstadoVenta?.Nombre));
-        var pedidosPorMaquina = ventas
+        var pedidosImpresos = ventasDelDia.Count(x => IsPrinted(x.EstadoVenta?.Nombre) || x.Detalles.Any(d => d.CheckImpresion == true));
+        var pedidosEntregados = ventasDelDia.Count(x => IsDelivered(x.EstadoVenta?.Nombre));
+        var pedidosPorMaquina = ventasDelDia
             .SelectMany(x => x.Detalles.Select(d => new
             {
                 d.CabId,
@@ -101,7 +106,7 @@ public class VentasImpresionController : ControllerBase
             .Take(7)
             .ToList();
 
-        var mejoresVendedores = ventas
+        var mejoresVendedores = ventasDelMes
             .GroupBy(x => x.VendedorId)
             .Select(x => new DashboardSellerDto(
                 vendedores.TryGetValue(x.Key, out var nombre) ? nombre : $"Vendedor {x.Key}",
@@ -111,10 +116,10 @@ public class VentasImpresionController : ControllerBase
             .ToList();
 
         return Ok(new DashboardSummaryDto(
-            ventas.Count,
-            ventas.Count,
+            ventasDelDia.Count,
+            ventasDelDia.Count,
             pedidosImpresos,
-            Math.Max(ventas.Count - pedidosImpresos, 0),
+            Math.Max(ventasDelDia.Count - pedidosImpresos, 0),
             pedidosEntregados,
             pedidosPorMaquina,
             pendientesPago,
