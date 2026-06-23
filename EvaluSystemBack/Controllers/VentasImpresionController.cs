@@ -21,12 +21,29 @@ public class VentasImpresionController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<PagedResponse<VentaImpresionCabDto>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<ActionResult<PagedResponse<VentaImpresionCabDto>>> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? search = null)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = Query().AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x =>
+                x.Id.ToString().Contains(term) ||
+                (x.Cliente != null && x.Cliente.Nombre != null && x.Cliente.Nombre.Contains(term)) ||
+                (x.EstadoVenta != null && x.EstadoVenta.Nombre != null && x.EstadoVenta.Nombre.Contains(term)) ||
+                (x.FormaPago != null && x.FormaPago.Nombre != null && x.FormaPago.Nombre.Contains(term)) ||
+                x.Detalles.Any(d =>
+                    (d.Producto != null && d.Producto.Nombre.Contains(term)) ||
+                    (d.TipoMaquina != null && d.TipoMaquina.Nombre.Contains(term))));
+        }
+
         var totalItems = await query.CountAsync();
         var items = await query
             .OrderByDescending(x => x.Id)
