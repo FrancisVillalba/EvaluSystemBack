@@ -66,6 +66,61 @@ public class VentasImpresionController : ControllerBase
         return item is null ? NotFound() : Ok(item.ToDto());
     }
 
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<DashboardSummaryDto>> GetDashboard()
+    {
+        var ventas = await Query().AsNoTracking().ToListAsync();
+        var vendedores = await _context.Personas
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => NombrePersona(x));
+
+        var pedidosImpresos = ventas.Count(x => IsPrinted(x.EstadoVenta?.Nombre) || x.Detalles.Any(d => d.CheckImpresion == true));
+        var pedidosEntregados = ventas.Count(x => IsDelivered(x.EstadoVenta?.Nombre));
+        var pedidosPorMaquina = ventas
+            .SelectMany(x => x.Detalles.Select(d => new
+            {
+                d.CabId,
+                Maquina = d.TipoMaquina?.Nombre ?? "Sin maquina"
+            }))
+            .GroupBy(x => x.Maquina)
+            .Select(x => new DashboardMachineDto(x.Key, x.Select(item => item.CabId).Distinct().Count()))
+            .OrderByDescending(x => x.Cantidad)
+            .Take(6)
+            .ToList();
+
+        var pendientesPago = ventas
+            .Select(x => new
+            {
+                Cliente = x.Cliente?.Nombre ?? "Sin cliente",
+                Pendiente = Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0)
+            })
+            .Where(x => x.Pendiente > 0)
+            .GroupBy(x => x.Cliente)
+            .Select(x => new DashboardMoneyDto(x.Key, x.Sum(item => item.Pendiente)))
+            .OrderByDescending(x => x.Monto)
+            .Take(7)
+            .ToList();
+
+        var mejoresVendedores = ventas
+            .GroupBy(x => x.VendedorId)
+            .Select(x => new DashboardSellerDto(
+                vendedores.TryGetValue(x.Key, out var nombre) ? nombre : $"Vendedor {x.Key}",
+                x.Count()))
+            .OrderByDescending(x => x.Cantidad)
+            .Take(7)
+            .ToList();
+
+        return Ok(new DashboardSummaryDto(
+            ventas.Count,
+            ventas.Count,
+            pedidosImpresos,
+            Math.Max(ventas.Count - pedidosImpresos, 0),
+            pedidosEntregados,
+            pedidosPorMaquina,
+            pendientesPago,
+            mejoresVendedores));
+    }
+
     [HttpPost]
     public async Task<ActionResult<VentaImpresionCabDto>> Create(VentaImpresionCabRequest request)
     {
@@ -161,5 +216,29 @@ public class VentasImpresionController : ControllerBase
             .Include(x => x.EstadoVenta)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
+    }
+
+    private static string NombrePersona(Models.Persona persona)
+    {
+        var nombre = string.Join(" ", new[]
+        {
+            persona.PrimerNombre,
+            persona.SegundoNombre,
+            persona.PrimerApellido,
+            persona.SegundoApellido
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        return string.IsNullOrWhiteSpace(nombre) ? $"Vendedor {persona.Id}" : nombre;
+    }
+
+    private static bool IsPrinted(string? estado)
+    {
+        return estado?.Contains("impres", StringComparison.OrdinalIgnoreCase) == true
+            || estado?.Contains("entreg", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static bool IsDelivered(string? estado)
+    {
+        return estado?.Contains("entreg", StringComparison.OrdinalIgnoreCase) == true;
     }
 }
