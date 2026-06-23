@@ -21,10 +21,25 @@ public class VentasImpresionController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<VentaImpresionCabDto>>> GetAll()
+    public async Task<ActionResult<PagedResponse<VentaImpresionCabDto>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var items = await Query().AsNoTracking().ToListAsync();
-        return Ok(items.Select(x => x.ToDto()));
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = Query().AsNoTracking();
+        var totalItems = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(x => x.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return Ok(new PagedResponse<VentaImpresionCabDto>(
+            items.Select(x => x.ToDto()),
+            page,
+            pageSize,
+            totalItems,
+            (int)Math.Ceiling(totalItems / (double)pageSize)));
     }
 
     [HttpGet("{id:int}")]

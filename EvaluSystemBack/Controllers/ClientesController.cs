@@ -18,16 +18,30 @@ public class ClientesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ClienteDto>>> GetAll()
+    public async Task<ActionResult<PagedResponse<ClienteDto>>> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var clientes = await _context.Clientes
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _context.Clientes
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Departamento)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
-            .AsNoTracking()
+            .AsNoTracking();
+
+        var totalItems = await query.CountAsync();
+        var clientes = await query
+            .OrderBy(x => x.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
-        return Ok(clientes.Select(x => x.ToDto()));
+        return Ok(new PagedResponse<ClienteDto>(
+            clientes.Select(x => x.ToDto()),
+            page,
+            pageSize,
+            totalItems,
+            (int)Math.Ceiling(totalItems / (double)pageSize)));
     }
 
     [HttpGet("{id:int}")]
