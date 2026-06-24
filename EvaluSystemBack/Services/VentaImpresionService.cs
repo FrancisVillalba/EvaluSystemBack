@@ -38,6 +38,7 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarDetallesAsync(detalles);
 
         var totalVenta = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
+        await ValidarEstadoInicialAsync(request.EstadoVentaId);
         await ValidarCabeceraAsync(request, totalVenta);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -591,6 +592,28 @@ public class VentaImpresionService : IVentaImpresionService
         if (!permitido)
         {
             throw new InvalidOperationException("El cambio de estado solicitado no corresponde al flujo permitido.");
+        }
+    }
+
+    private async Task ValidarEstadoInicialAsync(string? estadoVentaIdRequest)
+    {
+        if (string.IsNullOrWhiteSpace(estadoVentaIdRequest))
+        {
+            return;
+        }
+
+        var estado = await _context.EstadosVenta
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == estadoVentaIdRequest);
+
+        if (estado is null || !string.Equals(estado.Estado, "A", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("El estado inicial de venta no existe o esta inactivo.");
+        }
+
+        if (estado.NumeroFlujo != FlujoCarga)
+        {
+            throw new InvalidOperationException("Una venta nueva debe iniciar en estado de carga.");
         }
     }
 
