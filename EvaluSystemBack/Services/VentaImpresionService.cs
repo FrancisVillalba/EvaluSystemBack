@@ -13,7 +13,12 @@ public class VentaImpresionService : IVentaImpresionService
     private const string EstadoDetalleInicial = "IP";
     private const string EstadoPagoPendiente = "P1";
     private const string EstadoPagoPagado = "P2";
-    private const int UltimoFlujoEditable = 2;
+    private const int FlujoCarga = 1;
+    private const int FlujoImpresion = 2;
+    private const int FlujoEnvio = 3;
+    private const int FlujoEnviado = 4;
+    private const int FlujoEliminado = 5;
+    private const int UltimoFlujoEditable = FlujoEnvio;
 
     private readonly EvaluSystemDbContext _context;
 
@@ -125,6 +130,7 @@ public class VentaImpresionService : IVentaImpresionService
         var totalVenta = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
         await ValidarCabeceraAsync(request, totalVenta);
         await ValidarVentaEditableAsync(cabecera);
+        await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -191,6 +197,7 @@ public class VentaImpresionService : IVentaImpresionService
         }
 
         await ValidarVentaEditableAsync(cabecera);
+        await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
         await ValidarCabeceraAsync(
             request.ClienteId,
             request.FormaPagoId,
@@ -544,6 +551,46 @@ public class VentaImpresionService : IVentaImpresionService
         if ((estado.NumeroFlujo ?? int.MaxValue) > UltimoFlujoEditable)
         {
             throw new InvalidOperationException("La venta ya avanzo de estado y no puede modificarse.");
+        }
+    }
+
+    private async Task ValidarTransicionEstadoAsync(string estadoActualId, string? estadoDestinoIdRequest)
+    {
+        var estadoDestinoId = string.IsNullOrWhiteSpace(estadoDestinoIdRequest) ? EstadoVentaInicial : estadoDestinoIdRequest;
+        if (estadoActualId == estadoDestinoId)
+        {
+            return;
+        }
+
+        var estados = await _context.EstadosVenta
+            .AsNoTracking()
+            .Where(x => x.Id == estadoActualId || x.Id == estadoDestinoId)
+            .ToListAsync();
+
+        var actual = estados.FirstOrDefault(x => x.Id == estadoActualId);
+        var destino = estados.FirstOrDefault(x => x.Id == estadoDestinoId);
+
+        if (actual is null || destino is null)
+        {
+            throw new InvalidOperationException("No se pudo validar el flujo de estados.");
+        }
+
+        var flujoActual = actual.NumeroFlujo;
+        var flujoDestino = destino.NumeroFlujo;
+
+        var permitido = (flujoActual, flujoDestino) switch
+        {
+            (FlujoCarga, FlujoImpresion) => true,
+            (FlujoImpresion, FlujoCarga) => true,
+            (FlujoImpresion, FlujoEnvio) => true,
+            (FlujoEnvio, FlujoEnviado) => true,
+            (_, FlujoEliminado) when flujoActual <= FlujoEnvio => true,
+            _ => false
+        };
+
+        if (!permitido)
+        {
+            throw new InvalidOperationException("El cambio de estado solicitado no corresponde al flujo permitido.");
         }
     }
 
