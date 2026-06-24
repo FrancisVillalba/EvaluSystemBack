@@ -24,7 +24,11 @@ public class VentasImpresionController : ControllerBase
     public async Task<ActionResult<PagedResponse<VentaImpresionCabDto>>> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] int? clienteId = null,
+        [FromQuery] string? estadoVentaId = null)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -42,6 +46,26 @@ public class VentasImpresionController : ControllerBase
                 x.Detalles.Any(d =>
                     (d.Producto != null && d.Producto.Nombre.Contains(term)) ||
                     (d.TipoMaquina != null && d.TipoMaquina.Nombre.Contains(term))));
+        }
+
+        if (dateFrom.HasValue)
+        {
+            query = query.Where(x => x.FechaEntrega.HasValue && x.FechaEntrega.Value.Date >= dateFrom.Value.Date);
+        }
+
+        if (dateTo.HasValue)
+        {
+            query = query.Where(x => x.FechaEntrega.HasValue && x.FechaEntrega.Value.Date <= dateTo.Value.Date);
+        }
+
+        if (clienteId.HasValue)
+        {
+            query = query.Where(x => x.ClienteId == clienteId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(estadoVentaId))
+        {
+            query = query.Where(x => x.EstadoVentaId == estadoVentaId);
         }
 
         var totalItems = await query.CountAsync();
