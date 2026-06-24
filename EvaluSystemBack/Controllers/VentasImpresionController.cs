@@ -50,12 +50,12 @@ public class VentasImpresionController : ControllerBase
 
         if (dateFrom.HasValue)
         {
-            query = query.Where(x => x.FechaEntrega.HasValue && x.FechaEntrega.Value.Date >= dateFrom.Value.Date);
+            query = query.Where(x => x.FechaCreacion.Date >= dateFrom.Value.Date);
         }
 
         if (dateTo.HasValue)
         {
-            query = query.Where(x => x.FechaEntrega.HasValue && x.FechaEntrega.Value.Date <= dateTo.Value.Date);
+            query = query.Where(x => x.FechaCreacion.Date <= dateTo.Value.Date);
         }
 
         if (clienteId.HasValue)

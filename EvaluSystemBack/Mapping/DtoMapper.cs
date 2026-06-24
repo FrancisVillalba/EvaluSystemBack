@@ -225,6 +225,7 @@ public static class DtoMapper
             entity.MontoPagado,
             entity.EstadoPagadoId,
             entity.EstadoPago?.Nombre,
+            entity.FechaCreacion,
             entity.FechaEntrega,
             entity.ComprobantePago,
             entity.ComprobantePagoNombre,
