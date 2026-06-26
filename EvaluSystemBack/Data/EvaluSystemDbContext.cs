@@ -5,12 +5,6 @@ namespace EvaluSystemBack.Data;
 
 public class EvaluSystemDbContext : DbContext
 {
-    private const string CatalogosSchema = "catalogos";
-    private const string ClientesSchema = "clientes";
-    private const string ConfigSchema = "config";
-    private const string SeguridadSchema = "seguridad";
-    private const string VentasSchema = "ventas";
-
     private readonly IHttpContextAccessor? _httpContextAccessor;
 
     public EvaluSystemDbContext(DbContextOptions<EvaluSystemDbContext> options, IHttpContextAccessor? httpContextAccessor = null) : base(options)
@@ -43,7 +37,7 @@ public class EvaluSystemDbContext : DbContext
     {
         modelBuilder.Entity<Ciudad>(entity =>
         {
-            entity.ToTable("Ciudad", CatalogosSchema);
+            entity.ToTable("Ciudad");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.DepartamentoId, e.CodigoDistrito }).IsUnique();
             entity.HasIndex(e => new { e.Id, e.DepartamentoId }).IsUnique();
@@ -55,7 +49,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Cliente>(entity =>
         {
-            entity.ToTable("Clientes", ClientesSchema);
+            entity.ToTable("Clientes");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(150);
             entity.Property(e => e.Documento).HasColumnName("documento").HasMaxLength(50);
@@ -75,7 +69,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<ClienteDatosEnvio>(entity =>
         {
-            entity.ToTable("Cliente_datos_envio", ClientesSchema);
+            entity.ToTable("Cliente_datos_envio");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.ClienteId).IsUnique();
             entity.Property(e => e.ClienteId).HasColumnName("clienteId");
@@ -103,7 +97,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Configuracion>(entity =>
         {
-            entity.ToTable("Configuraciones", ConfigSchema);
+            entity.ToTable("Configuraciones");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.Nombre, e.NroConfiguracion }).IsUnique();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(100).IsRequired();
@@ -113,7 +107,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Departamento>(entity =>
         {
-            entity.ToTable("Departamento", CatalogosSchema);
+            entity.ToTable("Departamento");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).ValueGeneratedNever();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(100).IsRequired();
@@ -122,7 +116,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<EstadoPago>(entity =>
         {
-            entity.ToTable("Estado_pago", VentasSchema);
+            entity.ToTable("Estado_pago");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasMaxLength(50).ValueGeneratedNever();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(50);
@@ -131,7 +125,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<EstadoVenta>(entity =>
         {
-            entity.ToTable("Estados_venta", VentasSchema);
+            entity.ToTable("Estados_venta");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id").HasMaxLength(2).ValueGeneratedNever();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(50);
@@ -141,7 +135,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<FormaPago>(entity =>
         {
-            entity.ToTable("Forma_pago", VentasSchema);
+            entity.ToTable("Forma_pago");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasMaxLength(1).ValueGeneratedNever();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(50);
@@ -150,7 +144,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Formulario>(entity =>
         {
-            entity.ToTable("Formularios", SeguridadSchema);
+            entity.ToTable("Formularios");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Nombre).IsUnique();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(100).IsRequired();
@@ -163,7 +157,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Perfil>(entity =>
         {
-            entity.ToTable("Perfiles", SeguridadSchema);
+            entity.ToTable("Perfiles");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(100).IsRequired();
@@ -177,7 +171,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<PerfilFormularioPermiso>(entity =>
         {
-            entity.ToTable("Perfil_formulario_permiso", SeguridadSchema);
+            entity.ToTable("Perfil_formulario_permiso");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.PerfilId, e.FormularioId }).IsUnique();
             entity.Property(e => e.PerfilId).HasColumnName("perfilId");
@@ -192,7 +186,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Persona>(entity =>
         {
-            entity.ToTable("Persona", SeguridadSchema);
+            entity.ToTable("Persona");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.PerfilId).HasColumnName("perfilId");
             entity.Property(e => e.PrimerNombre).HasColumnName("primer_nombre").HasMaxLength(50);
@@ -213,7 +207,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Producto>(entity =>
         {
-            entity.ToTable("Productos", CatalogosSchema);
+            entity.ToTable("Productos");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(150).IsRequired();
             entity.Property(e => e.PrecioBase).HasColumnName("precio_base").HasPrecision(18, 2);
@@ -227,12 +221,12 @@ public class EvaluSystemDbContext : DbContext
             entity.HasOne(e => e.TipoMaquina).WithMany(e => e.Productos).HasForeignKey(e => e.MaquinaId);
         });
 
-        ConfigureSimpleCatalog<TipoCliente>(modelBuilder, "Tipo_cliente", CatalogosSchema);
-        ConfigureSimpleCatalog<TipoDocumento>(modelBuilder, "Tipo_documento", CatalogosSchema);
+        ConfigureSimpleCatalog<TipoCliente>(modelBuilder, "Tipo_cliente");
+        ConfigureSimpleCatalog<TipoDocumento>(modelBuilder, "Tipo_documento");
 
         modelBuilder.Entity<TipoMaquina>(entity =>
         {
-            entity.ToTable("Tipo_maquina", CatalogosSchema);
+            entity.ToTable("Tipo_maquina");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(100).IsRequired();
             entity.Property(e => e.Estado).HasColumnName("estado");
@@ -244,7 +238,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Transportadora>(entity =>
         {
-            entity.ToTable("Transportadoras", ClientesSchema);
+            entity.ToTable("Transportadoras");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(150).IsRequired();
             entity.Property(e => e.Telefono).HasColumnName("telefono").HasMaxLength(50);
@@ -259,7 +253,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<Usuario>(entity =>
         {
-            entity.ToTable("Usuario", SeguridadSchema);
+            entity.ToTable("Usuario");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.NombreUsuario).HasColumnName("usuario").HasMaxLength(50);
@@ -275,7 +269,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<VentaImpresionCab>(entity =>
         {
-            entity.ToTable("Ventas_impresion_cab", VentasSchema);
+            entity.ToTable("Ventas_impresion_cab");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ClienteId).HasColumnName("clienteId");
             entity.Property(e => e.FormaPagoId).HasColumnName("formaPagoId").HasMaxLength(1).IsRequired();
@@ -300,7 +294,7 @@ public class EvaluSystemDbContext : DbContext
 
         modelBuilder.Entity<VentaImpresionDet>(entity =>
         {
-            entity.ToTable("Ventas_impresion_det", VentasSchema);
+            entity.ToTable("Ventas_impresion_det");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CabId).HasColumnName("cabId");
             entity.Property(e => e.ProductoId).HasColumnName("productoId");
@@ -324,11 +318,11 @@ public class EvaluSystemDbContext : DbContext
         });
     }
 
-    private static void ConfigureSimpleCatalog<T>(ModelBuilder modelBuilder, string tableName, string schema) where T : SimpleStringCatalog
+    private static void ConfigureSimpleCatalog<T>(ModelBuilder modelBuilder, string tableName) where T : SimpleStringCatalog
     {
         modelBuilder.Entity<T>(entity =>
         {
-            entity.ToTable(tableName, schema);
+            entity.ToTable(tableName);
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasMaxLength(50).ValueGeneratedNever();
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(50);
