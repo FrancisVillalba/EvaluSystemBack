@@ -12,7 +12,8 @@ public class VentaImpresionService : IVentaImpresionService
     private const string EstadoVentaInicial = "PI";
     private const string EstadoDetalleInicial = "IP";
     private const string EstadoPagoPendiente = "P1";
-    private const string EstadoPagoPagado = "P2";
+    private const string EstadoPagoParcial = "P2";
+    private const string EstadoPagoPagado = "P3";
     private const int FlujoCarga = 1;
     private const int FlujoImpresion = 2;
     private const int FlujoEnvio = 3;
@@ -635,6 +636,16 @@ public class VentaImpresionService : IVentaImpresionService
         if (estadoPagadoId == EstadoPagoPagado && montoPagado < totalVenta)
         {
             throw new InvalidOperationException("Para marcar la venta como pagada, el monto pagado debe cubrir el total.");
+        }
+
+        if (estadoPagadoId == EstadoPagoParcial && (montoPagado <= 0 || montoPagado >= totalVenta))
+        {
+            throw new InvalidOperationException("Para marcar la venta como parcial, el monto pagado debe ser mayor a cero y menor al total.");
+        }
+
+        if (estadoPagadoId == EstadoPagoPendiente && montoPagado > 0)
+        {
+            throw new InvalidOperationException("Si existe un monto pagado, el estado de pago debe ser Parcial o Pagado.");
         }
 
         if (estadoPagadoId == EstadoPagoPendiente && totalVenta > 0 && montoPagado == totalVenta)
