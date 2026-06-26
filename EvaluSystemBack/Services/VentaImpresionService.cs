@@ -128,8 +128,27 @@ public class VentaImpresionService : IVentaImpresionService
             throw new InvalidOperationException("Uno o mas detalles no pertenecen a la venta.");
         }
 
-        await ValidarDetallesAsync(detalles);
         var totalVenta = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
+        if (EsActualizacionSoloPago(cabecera, request, totalVenta, detalles))
+        {
+            await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
+
+            cabecera.FormaPagoId = request.FormaPagoId;
+            cabecera.MontoPagado = request.MontoPagado ?? 0;
+            cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
+            cabecera.ComprobantePago = request.ComprobantePago;
+            cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
+
+            await _context.SaveChangesAsync();
+
+            var ventaSoloPago = await QueryVentaCompleta()
+                .AsNoTracking()
+                .FirstAsync(x => x.Id == id);
+
+            return ventaSoloPago.ToDto();
+        }
+
+        await ValidarDetallesAsync(detalles);
         await ValidarCabeceraAsync(request, totalVenta);
         await ValidarVentaEditableAsync(cabecera);
         await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
@@ -196,6 +215,25 @@ public class VentaImpresionService : IVentaImpresionService
         if (cabecera is null)
         {
             return null;
+        }
+
+        if (EsActualizacionSoloPago(cabecera, request))
+        {
+            await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
+
+            cabecera.FormaPagoId = request.FormaPagoId;
+            cabecera.MontoPagado = request.MontoPagado ?? 0;
+            cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
+            cabecera.ComprobantePago = request.ComprobantePago;
+            cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
+
+            await _context.SaveChangesAsync();
+
+            var ventaSoloPago = await QueryVentaCompleta()
+                .AsNoTracking()
+                .FirstAsync(x => x.Id == id);
+
+            return ventaSoloPago.ToDto();
         }
 
         await ValidarVentaEditableAsync(cabecera);
@@ -452,6 +490,26 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarPagoAsync(montoPagado, estadoPagadoId, totalVenta);
     }
 
+    private async Task ValidarCamposPagoAsync(
+        string formaPagoId,
+        decimal? montoPagado,
+        string? estadoPagadoIdRequest,
+        decimal totalVenta)
+    {
+        if (string.IsNullOrWhiteSpace(formaPagoId))
+        {
+            throw new InvalidOperationException("Debe seleccionar una forma de pago.");
+        }
+
+        if (!await _context.FormasPago.AnyAsync(x => x.Id == formaPagoId && x.Estado == true))
+        {
+            throw new InvalidOperationException("La forma de pago no existe o esta inactiva.");
+        }
+
+        var estadoPagadoId = string.IsNullOrWhiteSpace(estadoPagadoIdRequest) ? EstadoPagoPendiente : estadoPagadoIdRequest;
+        await ValidarPagoAsync(montoPagado, estadoPagadoId, totalVenta);
+    }
+
     private async Task ValidarDetallesAsync(IEnumerable<VentaImpresionDetalleCreateRequest> detalles)
     {
         foreach (var detalle in detalles)
@@ -616,6 +674,78 @@ public class VentaImpresionService : IVentaImpresionService
         {
             throw new InvalidOperationException("Una venta nueva debe iniciar en estado de carga.");
         }
+    }
+
+    private bool EsActualizacionSoloPago(
+        VentaImpresionCab cabecera,
+        VentaImpresionCompletaUpdateRequest request,
+        decimal totalVentaRequest,
+        IReadOnlyCollection<VentaImpresionDetalleUpdateRequest> detallesRequest)
+    {
+        var estadoVentaId = string.IsNullOrWhiteSpace(request.EstadoVentaId) ? EstadoVentaInicial : request.EstadoVentaId;
+
+        return cabecera.ClienteId == request.ClienteId
+            && cabecera.VendedorId == request.VendedorId
+            && cabecera.TotalVenta == totalVentaRequest
+            && ValoresIguales(cabecera.EstadoVentaId, estadoVentaId)
+            && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
+            && ValoresIguales(cabecera.Observacion, request.Observacion)
+            && DetallesIguales(cabecera.Detalles, detallesRequest);
+    }
+
+    private bool EsActualizacionSoloPago(VentaImpresionCab cabecera, VentaImpresionCabRequest request)
+    {
+        return cabecera.ClienteId == request.ClienteId
+            && cabecera.VendedorId == request.VendedorId
+            && cabecera.TotalVenta == request.TotalVenta
+            && ValoresIguales(cabecera.EstadoVentaId, request.EstadoVentaId)
+            && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
+            && ValoresIguales(cabecera.Observacion, request.Observacion);
+    }
+
+    private static bool DetallesIguales(
+        ICollection<VentaImpresionDet> detallesActuales,
+        IReadOnlyCollection<VentaImpresionDetalleUpdateRequest> detallesRequest)
+    {
+        if (detallesActuales.Count != detallesRequest.Count)
+        {
+            return false;
+        }
+
+        var actualesPorId = detallesActuales.ToDictionary(x => x.Id);
+        foreach (var detalleRequest in detallesRequest)
+        {
+            if (!detalleRequest.Id.HasValue || !actualesPorId.TryGetValue(detalleRequest.Id.Value, out var actual))
+            {
+                return false;
+            }
+
+            if (actual.ProductoId != detalleRequest.ProductoId
+                || actual.TipoMaquinaId != detalleRequest.TipoMaquinaId
+                || actual.Cantidad != detalleRequest.Cantidad
+                || actual.PrecioUnitario != detalleRequest.PrecioUnitario
+                || (actual.PrecioExtra ?? 0) != (detalleRequest.PrecioExtra ?? 0)
+                || !ValoresIguales(actual.ArchivoDisenio, detalleRequest.ArchivoDisenio)
+                || !ValoresIguales(actual.ArchivoDisenioNombre, detalleRequest.ArchivoDisenioNombre)
+                || !ValoresIguales(actual.Observacion, detalleRequest.Observacion)
+                || !ValoresIguales(actual.EstadoItem, string.IsNullOrWhiteSpace(detalleRequest.EstadoItem) ? EstadoDetalleInicial : detalleRequest.EstadoItem)
+                || (actual.CheckImpresion ?? false) != (detalleRequest.CheckImpresion ?? false))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool FechasIguales(DateTime? actual, DateTime? request)
+    {
+        return actual?.Date == request?.Date;
+    }
+
+    private static bool ValoresIguales(string? actual, string? request)
+    {
+        return string.Equals(actual ?? string.Empty, request ?? string.Empty, StringComparison.Ordinal);
     }
 
     private async Task ValidarPagoAsync(decimal? montoPagadoRequest, string? estadoPagadoIdRequest, decimal totalVenta)
