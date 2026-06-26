@@ -41,6 +41,7 @@ public class VentaImpresionService : IVentaImpresionService
         var totalVenta = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
         await ValidarEstadoInicialAsync(request.EstadoVentaId);
         await ValidarCabeceraAsync(request, totalVenta);
+        await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -132,6 +133,7 @@ public class VentaImpresionService : IVentaImpresionService
         if (EsActualizacionSoloPago(cabecera, request, totalVenta, detalles))
         {
             await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
+            await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
 
             cabecera.FormaPagoId = request.FormaPagoId;
             cabecera.MontoPagado = request.MontoPagado ?? 0;
@@ -150,8 +152,10 @@ public class VentaImpresionService : IVentaImpresionService
 
         await ValidarDetallesAsync(detalles);
         await ValidarCabeceraAsync(request, totalVenta);
+        await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
         await ValidarVentaEditableAsync(cabecera);
         await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
+        await ValidarAdjuntosParaImpresionAsync(cabecera.EstadoVentaId, request.EstadoVentaId, detalles);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -210,6 +214,7 @@ public class VentaImpresionService : IVentaImpresionService
     {
         var cabecera = await _context.VentasImpresionCab
             .Include(x => x.EstadoVenta)
+            .Include(x => x.Detalles)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (cabecera is null)
@@ -220,6 +225,7 @@ public class VentaImpresionService : IVentaImpresionService
         if (EsActualizacionSoloPago(cabecera, request))
         {
             await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
+            await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
 
             cabecera.FormaPagoId = request.FormaPagoId;
             cabecera.MontoPagado = request.MontoPagado ?? 0;
@@ -246,6 +252,8 @@ public class VentaImpresionService : IVentaImpresionService
             request.EstadoVentaId,
             request.EstadoPagadoId,
             request.TotalVenta);
+        await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
+        await ValidarAdjuntosParaImpresionAsync(cabecera.EstadoVentaId, request.EstadoVentaId, cabecera.Detalles);
 
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
@@ -652,6 +660,70 @@ public class VentaImpresionService : IVentaImpresionService
         {
             throw new InvalidOperationException("El cambio de estado solicitado no corresponde al flujo permitido.");
         }
+    }
+
+    private Task ValidarComprobantePagoAsync(string? estadoPagadoIdRequest, string? comprobantePago, string? comprobantePagoNombre)
+    {
+        var estadoPagadoId = string.IsNullOrWhiteSpace(estadoPagadoIdRequest) ? EstadoPagoPendiente : estadoPagadoIdRequest;
+        if (estadoPagadoId == EstadoPagoPagado
+            && string.IsNullOrWhiteSpace(comprobantePago)
+            && string.IsNullOrWhiteSpace(comprobantePagoNombre))
+        {
+            throw new InvalidOperationException("Para marcar la venta como pagada debe adjuntar el comprobante de pago.");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task ValidarAdjuntosParaImpresionAsync(
+        string estadoActualId,
+        string? estadoDestinoIdRequest,
+        IEnumerable<VentaImpresionDetalleUpdateRequest> detalles)
+    {
+        if (!await EsTransicionCargaAImpresionAsync(estadoActualId, estadoDestinoIdRequest))
+        {
+            return;
+        }
+
+        if (detalles.Any(x => string.IsNullOrWhiteSpace(x.ArchivoDisenio) && string.IsNullOrWhiteSpace(x.ArchivoDisenioNombre)))
+        {
+            throw new InvalidOperationException("Para enviar a impresion debe adjuntar el diseno en todos los detalles.");
+        }
+    }
+
+    private async Task ValidarAdjuntosParaImpresionAsync(
+        string estadoActualId,
+        string? estadoDestinoIdRequest,
+        IEnumerable<VentaImpresionDet> detalles)
+    {
+        if (!await EsTransicionCargaAImpresionAsync(estadoActualId, estadoDestinoIdRequest))
+        {
+            return;
+        }
+
+        if (detalles.Any(x => string.IsNullOrWhiteSpace(x.ArchivoDisenio) && string.IsNullOrWhiteSpace(x.ArchivoDisenioNombre)))
+        {
+            throw new InvalidOperationException("Para enviar a impresion debe adjuntar el diseno en todos los detalles.");
+        }
+    }
+
+    private async Task<bool> EsTransicionCargaAImpresionAsync(string estadoActualId, string? estadoDestinoIdRequest)
+    {
+        var estadoDestinoId = string.IsNullOrWhiteSpace(estadoDestinoIdRequest) ? EstadoVentaInicial : estadoDestinoIdRequest;
+        if (estadoActualId == estadoDestinoId)
+        {
+            return false;
+        }
+
+        var estados = await _context.EstadosVenta
+            .AsNoTracking()
+            .Where(x => x.Id == estadoActualId || x.Id == estadoDestinoId)
+            .ToListAsync();
+
+        var actual = estados.FirstOrDefault(x => x.Id == estadoActualId);
+        var destino = estados.FirstOrDefault(x => x.Id == estadoDestinoId);
+
+        return actual?.NumeroFlujo == FlujoCarga && destino?.NumeroFlujo == FlujoImpresion;
     }
 
     private async Task ValidarEstadoInicialAsync(string? estadoVentaIdRequest)
