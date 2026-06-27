@@ -23,14 +23,22 @@ public class UsuariosController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<UsuarioDto>>> GetAll()
     {
-        var items = await _context.Usuarios.Include(x => x.Persona).AsNoTracking().ToListAsync();
+        var items = await _context.Usuarios
+            .Include(x => x.Persona)
+            .ThenInclude(x => x!.Perfil)
+            .AsNoTracking()
+            .ToListAsync();
         return Ok(items.Select(x => x.ToDto()));
     }
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<UsuarioDto>> GetById(int id)
     {
-        var item = await _context.Usuarios.Include(x => x.Persona).AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        var item = await _context.Usuarios
+            .Include(x => x.Persona)
+            .ThenInclude(x => x!.Perfil)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id);
         return item is null ? NotFound() : Ok(item.ToDto());
     }
 

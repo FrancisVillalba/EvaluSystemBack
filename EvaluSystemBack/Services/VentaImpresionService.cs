@@ -276,6 +276,46 @@ public class VentaImpresionService : IVentaImpresionService
         return venta.ToDto();
     }
 
+    public async Task<VentaImpresionCabDto?> MarcarVentaEliminadaAsync(int id, EliminarVentaImpresionRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Observacion))
+        {
+            throw new InvalidOperationException("Debe agregar un comentario para eliminar el pedido.");
+        }
+
+        var cabecera = await _context.VentasImpresionCab
+            .Include(x => x.EstadoVenta)
+            .Include(x => x.Detalles)
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (cabecera is null)
+        {
+            return null;
+        }
+
+        var estadoEliminado = await _context.EstadosVenta
+            .AsNoTracking()
+            .Where(x => x.NumeroFlujo == FlujoEliminado)
+            .OrderBy(x => x.Nombre)
+            .FirstOrDefaultAsync();
+
+        if (estadoEliminado is null)
+        {
+            throw new InvalidOperationException("No se encontro el estado eliminado.");
+        }
+
+        cabecera.EstadoVentaId = estadoEliminado.Id;
+        cabecera.Observacion = request.Observacion.Trim();
+
+        await _context.SaveChangesAsync();
+
+        var venta = await QueryVentaCompleta()
+            .AsNoTracking()
+            .FirstAsync(x => x.Id == id);
+
+        return venta.ToDto();
+    }
+
     public async Task<bool> EliminarVentaAsync(int id)
     {
         var cabecera = await _context.VentasImpresionCab

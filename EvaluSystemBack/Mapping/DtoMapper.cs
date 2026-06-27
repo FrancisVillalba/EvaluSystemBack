@@ -10,6 +10,16 @@ public static class DtoMapper
         return new CatalogDto(entity.Id, entity.Nombre, entity.Estado);
     }
 
+    public static EstadoVentaOptionDto ToDto(this EstadoVenta entity)
+    {
+        return new EstadoVentaOptionDto(entity.Id, entity.Nombre, entity.Estado, entity.NumeroFlujo);
+    }
+
+    public static CatalogDto ToDto(this FormaPago entity)
+    {
+        return new CatalogDto(entity.Id, entity.Nombre, entity.Estado);
+    }
+
     public static DepartamentoDto ToDto(this Departamento entity)
     {
         return new DepartamentoDto(entity.Id, entity.Nombre, entity.Estado);
@@ -198,7 +208,14 @@ public static class DtoMapper
             entity.Persona?.SegundoApellido
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
-        return new UsuarioDto(entity.Id, entity.NombreUsuario, entity.PersonaId, string.IsNullOrWhiteSpace(persona) ? null : persona, entity.Estado);
+        return new UsuarioDto(
+            entity.Id,
+            entity.NombreUsuario,
+            entity.PersonaId,
+            string.IsNullOrWhiteSpace(persona) ? null : persona,
+            entity.Persona?.PerfilId,
+            entity.Persona?.Perfil?.Nombre,
+            entity.Estado);
     }
 
     public static Usuario ToEntity(this UsuarioRequest request, Usuario? entity = null)

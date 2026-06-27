@@ -4,6 +4,8 @@ namespace EvaluSystemBack.Dtos;
 
 public record CatalogDto(string Id, string? Nombre, bool? Estado);
 
+public record EstadoVentaOptionDto(string Id, string? Nombre, string? Estado, int? NumeroFlujo);
+
 public record DepartamentoDto(int Id, string Nombre, bool Estado);
 
 public record CiudadDto(int Id, int DepartamentoId, string? Departamento, int CodigoDistrito, string Nombre, bool Estado);
@@ -99,9 +101,20 @@ public record TipoMaquinaDto(int Id, string Nombre, bool Estado);
 
 public record TipoMaquinaRequest([Required] string Nombre, bool Estado);
 
-public record UsuarioDto(int Id, string? NombreUsuario, int? PersonaId, string? Persona, bool? Estado);
+public record UsuarioDto(int Id, string? NombreUsuario, int? PersonaId, string? Persona, int? PerfilId, string? Perfil, bool? Estado);
 
 public record UsuarioRequest([Required] string? NombreUsuario, string? Pass, int? PersonaId, bool? Estado);
+
+public record VentaImpresionOptionsDto(
+    IEnumerable<ClienteDto> Clientes,
+    IEnumerable<CatalogDto> FormasPago,
+    IEnumerable<UsuarioDto> Vendedores,
+    IEnumerable<CatalogDto> EstadosPago,
+    IEnumerable<EstadoVentaOptionDto> EstadosVenta,
+    IEnumerable<ProductoDto> Productos,
+    IEnumerable<TipoMaquinaDto> Maquinas,
+    int? UsuarioActualId,
+    bool PuedeVerTodosPedidos);
 
 public record VentaImpresionCabDto(
     int Id,
@@ -143,6 +156,11 @@ public record VentaImpresionCabRequest(
     string? ComprobantePagoNombre,
     [StringLength(500)]
     string? Observacion);
+
+public record EliminarVentaImpresionRequest(
+    [Required]
+    [StringLength(500)]
+    string Observacion);
 
 public record VentaImpresionDetDto(
     int Id,

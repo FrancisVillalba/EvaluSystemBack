@@ -4,6 +4,7 @@ using EvaluSystemBack.Mapping;
 using EvaluSystemBack.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace EvaluSystemBack.Controllers;
 
@@ -28,12 +29,29 @@ public class VentasImpresionController : ControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? clienteId = null,
-        [FromQuery] string? estadoVentaId = null)
+        [FromQuery] string? estadoVentaId = null,
+        [FromQuery] int? vendedorId = null)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = Query().AsNoTracking();
+        var canViewAll = await CurrentUserCanViewAllOrdersAsync();
+        var currentUserId = CurrentUserId();
+
+        if (!canViewAll)
+        {
+            if (!currentUserId.HasValue)
+            {
+                return Forbid();
+            }
+
+            query = query.Where(x => x.VendedorId == currentUserId.Value);
+        }
+        else if (vendedorId.HasValue)
+        {
+            query = query.Where(x => x.VendedorId == vendedorId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -50,12 +68,14 @@ public class VentasImpresionController : ControllerBase
 
         if (dateFrom.HasValue)
         {
-            query = query.Where(x => x.FechaCreacion.Date >= dateFrom.Value.Date);
+            var from = dateFrom.Value.Date;
+            query = query.Where(x => x.FechaCreacion >= from);
         }
 
         if (dateTo.HasValue)
         {
-            query = query.Where(x => x.FechaCreacion.Date <= dateTo.Value.Date);
+            var to = dateTo.Value.Date.AddDays(1);
+            query = query.Where(x => x.FechaCreacion < to);
         }
 
         if (clienteId.HasValue)
@@ -83,11 +103,65 @@ public class VentasImpresionController : ControllerBase
             (int)Math.Ceiling(totalItems / (double)pageSize)));
     }
 
+    [HttpGet("opciones")]
+    public async Task<ActionResult<VentaImpresionOptionsDto>> GetOptions()
+    {
+        var canViewAll = await CurrentUserCanViewAllOrdersAsync();
+        var currentUserId = CurrentUserId();
+
+        var clientes = await _context.Clientes.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
+        var formasPago = await _context.FormasPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
+        var usuarios = await _context.Usuarios
+            .Include(x => x.Persona)
+            .ThenInclude(x => x!.Perfil)
+            .AsNoTracking()
+            .Where(x => x.Estado != false)
+            .ToListAsync();
+        var estadosPago = await _context.EstadosPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
+        var estadosVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .Where(x => x.Estado == "A")
+            .OrderBy(x => x.NumeroFlujo ?? int.MaxValue)
+            .ThenBy(x => x.Nombre)
+            .ToListAsync();
+        var productos = await _context.Productos
+            .Include(x => x.TipoMaquina)
+            .AsNoTracking()
+            .Where(x => x.Estado)
+            .ToListAsync();
+        var maquinas = await _context.TiposMaquina.AsNoTracking().Where(x => x.Estado).ToListAsync();
+
+        return Ok(new VentaImpresionOptionsDto(
+            clientes.Select(x => x.ToDto()),
+            formasPago.Select(x => x.ToDto()),
+            usuarios.Select(x => x.ToDto()),
+            estadosPago.Select(x => x.ToDto()),
+            estadosVenta.Select(x => x.ToDto()),
+            productos.Select(x => x.ToDto()),
+            maquinas.Select(x => x.ToDto()),
+            currentUserId,
+            canViewAll));
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<VentaImpresionCabDto>> GetById(int id)
     {
         var item = await Query().AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
-        return item is null ? NotFound() : Ok(item.ToDto());
+        if (item is null)
+        {
+            return NotFound();
+        }
+
+        if (!await CurrentUserCanViewAllOrdersAsync())
+        {
+            var currentUserId = CurrentUserId();
+            if (!currentUserId.HasValue || item.VendedorId != currentUserId.Value)
+            {
+                return Forbid();
+            }
+        }
+
+        return Ok(item.ToDto());
     }
 
     [HttpGet("dashboard")]
@@ -236,6 +310,13 @@ public class VentasImpresionController : ControllerBase
         return eliminado ? NoContent() : NotFound();
     }
 
+    [HttpPut("{id:int}/marcar-eliminado")]
+    public async Task<ActionResult<VentaImpresionCabDto>> MarkDeleted(int id, EliminarVentaImpresionRequest request)
+    {
+        var venta = await _ventaImpresionService.MarcarVentaEliminadaAsync(id, request);
+        return venta is null ? NotFound() : Ok(venta);
+    }
+
     private IQueryable<Models.VentaImpresionCab> Query()
     {
         return _context.VentasImpresionCab
@@ -245,6 +326,29 @@ public class VentasImpresionController : ControllerBase
             .Include(x => x.EstadoVenta)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
+    }
+
+    private int? CurrentUserId()
+    {
+        var value = User.FindFirstValue("usuarioId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(value, out var userId) ? userId : null;
+    }
+
+    private async Task<bool> CurrentUserCanViewAllOrdersAsync()
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return false;
+        }
+
+        var profileName = await _context.Usuarios
+            .AsNoTracking()
+            .Where(x => x.Id == userId.Value)
+            .Select(x => x.Persona != null && x.Persona.Perfil != null ? x.Persona.Perfil.Nombre : null)
+            .FirstOrDefaultAsync();
+
+        return string.Equals(profileName, "Administrador", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NombrePersona(Models.Persona persona)
