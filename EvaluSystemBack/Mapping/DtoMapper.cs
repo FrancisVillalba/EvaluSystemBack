@@ -50,7 +50,7 @@ public static class DtoMapper
         entity ??= new Cliente();
         entity.Nombre = request.Nombre;
         entity.Documento = request.Documento;
-        entity.TipoDocumentoId = request.TipoDocumentoId;
+        entity.TipoDocumentoId = string.IsNullOrWhiteSpace(request.TipoDocumentoId) ? "CI" : request.TipoDocumentoId;
         entity.TipoClienteId = request.TipoClienteId;
         entity.Email = request.Email;
         entity.NroTelefono = request.NroTelefono;

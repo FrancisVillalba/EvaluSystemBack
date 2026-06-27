@@ -23,13 +23,13 @@ public record ClienteDto(
     ClienteDatosEnvioDto? DatosEnvio);
 
 public record ClienteRequest(
-    string? Nombre,
+    [Required] string? Nombre,
     string? Documento,
-    [Required] string TipoDocumentoId,
+    string? TipoDocumentoId,
     [Required] string TipoClienteId,
     [EmailAddress] 
     string? Email,
-    string? NroTelefono,
+    [Required] string? NroTelefono,
     string? Direccion,
     bool? Estado);
 
@@ -51,11 +51,14 @@ public record ClienteDatosEnvioDto(
 
 public record ClienteDatosEnvioRequest(
     int ClienteId,
+    [Range(1, int.MaxValue)]
     int TransportadoraId,
     [Required] string NombreReceptor,
     [Required] string DocumentoReceptor,
     [Required] string TelefonoReceptor,
+    [Range(1, int.MaxValue)]
     int DepartamentoId,
+    [Range(1, int.MaxValue)]
     int CiudadId,
     [Required] string Direccion,
     string? Observacion,

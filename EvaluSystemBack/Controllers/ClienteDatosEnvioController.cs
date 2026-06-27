@@ -48,7 +48,7 @@ public class ClienteDatosEnvioController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update(int id, ClienteDatosEnvioRequest request)
+    public async Task<ActionResult<ClienteDatosEnvioDto>> Update(int id, ClienteDatosEnvioRequest request)
     {
         var envio = await _context.ClienteDatosEnvios.FindAsync(id);
         if (envio is null)
@@ -58,7 +58,7 @@ public class ClienteDatosEnvioController : ControllerBase
 
         request.ToEntity(envio);
         await _context.SaveChangesAsync();
-        return NoContent();
+        return Ok(envio.ToDto());
     }
 
     [HttpDelete("{id:int}")]
