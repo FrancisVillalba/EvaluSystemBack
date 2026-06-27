@@ -116,6 +116,8 @@ public record VentaImpresionOptionsDto(
     int? UsuarioActualId,
     bool PuedeVerTodosPedidos);
 
+public record ExcelFileDto(string FileName, string ContentType, string Bytes);
+
 public record VentaImpresionCabDto(
     int Id,
     int ClienteId,

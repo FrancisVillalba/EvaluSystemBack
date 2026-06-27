@@ -4,7 +4,11 @@ using EvaluSystemBack.Mapping;
 using EvaluSystemBack.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.IO.Compression;
+using System.Globalization;
+using System.Net;
 using System.Security.Claims;
+using System.Text;
 
 namespace EvaluSystemBack.Controllers;
 
@@ -35,58 +39,13 @@ public class VentasImpresionController : ControllerBase
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = Query().AsNoTracking();
-        var canViewAll = await CurrentUserCanViewAllOrdersAsync();
-        var currentUserId = CurrentUserId();
-
-        if (!canViewAll)
+        var filtered = await FilteredQueryAsync(search, dateFrom, dateTo, clienteId, estadoVentaId, vendedorId);
+        if (filtered.Forbidden)
         {
-            if (!currentUserId.HasValue)
-            {
-                return Forbid();
-            }
-
-            query = query.Where(x => x.VendedorId == currentUserId.Value);
-        }
-        else if (vendedorId.HasValue)
-        {
-            query = query.Where(x => x.VendedorId == vendedorId.Value);
+            return Forbid();
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = search.Trim();
-            query = query.Where(x =>
-                x.Id.ToString().Contains(term) ||
-                (x.Cliente != null && x.Cliente.Nombre != null && x.Cliente.Nombre.Contains(term)) ||
-                (x.EstadoVenta != null && x.EstadoVenta.Nombre != null && x.EstadoVenta.Nombre.Contains(term)) ||
-                (x.FormaPago != null && x.FormaPago.Nombre != null && x.FormaPago.Nombre.Contains(term)) ||
-                x.Detalles.Any(d =>
-                    (d.Producto != null && d.Producto.Nombre.Contains(term)) ||
-                    (d.TipoMaquina != null && d.TipoMaquina.Nombre.Contains(term))));
-        }
-
-        if (dateFrom.HasValue)
-        {
-            var from = dateFrom.Value.Date;
-            query = query.Where(x => x.FechaCreacion >= from);
-        }
-
-        if (dateTo.HasValue)
-        {
-            var to = dateTo.Value.Date.AddDays(1);
-            query = query.Where(x => x.FechaCreacion < to);
-        }
-
-        if (clienteId.HasValue)
-        {
-            query = query.Where(x => x.ClienteId == clienteId.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(estadoVentaId))
-        {
-            query = query.Where(x => x.EstadoVentaId == estadoVentaId);
-        }
+        var query = filtered.Query;
 
         var totalItems = await query.CountAsync();
         var items = await query
@@ -101,6 +60,40 @@ public class VentasImpresionController : ControllerBase
             pageSize,
             totalItems,
             (int)Math.Ceiling(totalItems / (double)pageSize)));
+    }
+
+    [HttpGet("exportar-excel")]
+    public async Task<ActionResult<ExcelFileDto>> ExportExcel(
+        [FromQuery] string? search = null,
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] int? clienteId = null,
+        [FromQuery] string? estadoVentaId = null,
+        [FromQuery] int? vendedorId = null)
+    {
+        var filtered = await FilteredQueryAsync(search, dateFrom, dateTo, clienteId, estadoVentaId, vendedorId);
+        if (filtered.Forbidden)
+        {
+            return Forbid();
+        }
+
+        var items = await filtered.Query
+            .OrderByDescending(x => x.Id)
+            .ToListAsync();
+        var usuarios = await _context.Usuarios
+            .Include(x => x.Persona)
+            .AsNoTracking()
+            .Where(x => x.Estado != false)
+            .ToListAsync();
+        var vendedores = usuarios.ToDictionary(
+            x => x.Id,
+            x => x.Persona is null ? x.NombreUsuario ?? $"Usuario {x.Id}" : NombrePersona(x.Persona));
+        var bytes = BuildOrdersXlsx(items, vendedores);
+
+        return Ok(new ExcelFileDto(
+            $"pedidos-{DateTime.Now:yyyyMMdd-HHmm}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Convert.ToBase64String(bytes)));
     }
 
     [HttpGet("opciones")]
@@ -171,14 +164,17 @@ public class VentasImpresionController : ControllerBase
         var today = DateTime.Today;
         var monthStart = new DateTime(today.Year, today.Month, 1);
         var nextMonthStart = monthStart.AddMonths(1);
-        var ventasDelDia = ventas.Where(x => x.FechaCreacion.Date == today).ToList();
-        var ventasDelMes = ventas.Where(x => x.FechaCreacion >= monthStart && x.FechaCreacion < nextMonthStart).ToList();
+        var ventasActivas = ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre)).ToList();
+        var ventasDelDia = ventasActivas.Where(x => x.FechaCreacion.Date == today).ToList();
+        var ventasDelMes = ventasActivas.Where(x => x.FechaCreacion >= monthStart && x.FechaCreacion < nextMonthStart).ToList();
         var vendedores = await _context.Personas
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => NombrePersona(x));
 
-        var pedidosImpresos = ventasDelDia.Count(x => IsPrinted(x.EstadoVenta?.Nombre) || x.Detalles.Any(d => d.CheckImpresion == true));
-        var pedidosEntregados = ventasDelDia.Count(x => IsDelivered(x.EstadoVenta?.Nombre));
+        var pedidosCargadosHoy = ventasDelDia.Count;
+        var pedidosImpresos = ventasDelDia.Count(x => IsSent(x.EstadoVenta?.Nombre));
+        var pedidosPendientesImpresion = ventasDelDia.Count(x => IsPendingPrint(x.EstadoVenta?.Nombre));
+        var pedidosPendientesEnvioHoy = ventasDelDia.Count(x => !IsSent(x.EstadoVenta?.Nombre));
         var pedidosPorMaquina = ventasDelDia
             .SelectMany(x => x.Detalles.Select(d => new
             {
@@ -208,17 +204,17 @@ public class VentasImpresionController : ControllerBase
             .GroupBy(x => x.VendedorId)
             .Select(x => new DashboardSellerDto(
                 vendedores.TryGetValue(x.Key, out var nombre) ? nombre : $"Vendedor {x.Key}",
-                x.Count()))
-            .OrderByDescending(x => x.Cantidad)
+                x.Sum(item => item.TotalVenta)))
+            .OrderByDescending(x => x.Monto)
             .Take(7)
             .ToList();
 
         return Ok(new DashboardSummaryDto(
-            ventasDelDia.Count,
-            ventasDelDia.Count,
+            pedidosCargadosHoy,
+            pedidosCargadosHoy,
             pedidosImpresos,
-            Math.Max(ventasDelDia.Count - pedidosImpresos, 0),
-            pedidosEntregados,
+            pedidosPendientesImpresion,
+            pedidosPendientesEnvioHoy,
             pedidosPorMaquina,
             pendientesPago,
             mejoresVendedores));
@@ -328,6 +324,70 @@ public class VentasImpresionController : ControllerBase
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
     }
 
+    private async Task<FilteredVentasQuery> FilteredQueryAsync(
+        string? search,
+        DateTime? dateFrom,
+        DateTime? dateTo,
+        int? clienteId,
+        string? estadoVentaId,
+        int? vendedorId)
+    {
+        var query = Query().AsNoTracking();
+        var canViewAll = await CurrentUserCanViewAllOrdersAsync();
+        var currentUserId = CurrentUserId();
+
+        if (!canViewAll)
+        {
+            if (!currentUserId.HasValue)
+            {
+                return new FilteredVentasQuery(query, true);
+            }
+
+            query = query.Where(x => x.VendedorId == currentUserId.Value);
+        }
+        else if (vendedorId.HasValue)
+        {
+            query = query.Where(x => x.VendedorId == vendedorId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(x =>
+                x.Id.ToString().Contains(term) ||
+                (x.Cliente != null && x.Cliente.Nombre != null && x.Cliente.Nombre.Contains(term)) ||
+                (x.EstadoVenta != null && x.EstadoVenta.Nombre != null && x.EstadoVenta.Nombre.Contains(term)) ||
+                (x.FormaPago != null && x.FormaPago.Nombre != null && x.FormaPago.Nombre.Contains(term)) ||
+                x.Detalles.Any(d =>
+                    (d.Producto != null && d.Producto.Nombre.Contains(term)) ||
+                    (d.TipoMaquina != null && d.TipoMaquina.Nombre.Contains(term))));
+        }
+
+        if (dateFrom.HasValue)
+        {
+            var from = dateFrom.Value.Date;
+            query = query.Where(x => x.FechaCreacion >= from);
+        }
+
+        if (dateTo.HasValue)
+        {
+            var to = dateTo.Value.Date.AddDays(1);
+            query = query.Where(x => x.FechaCreacion < to);
+        }
+
+        if (clienteId.HasValue)
+        {
+            query = query.Where(x => x.ClienteId == clienteId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(estadoVentaId))
+        {
+            query = query.Where(x => x.EstadoVentaId == estadoVentaId);
+        }
+
+        return new FilteredVentasQuery(query, false);
+    }
+
     private int? CurrentUserId()
     {
         var value = User.FindFirstValue("usuarioId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -366,12 +426,206 @@ public class VentasImpresionController : ControllerBase
 
     private static bool IsPrinted(string? estado)
     {
-        return estado?.Contains("impres", StringComparison.OrdinalIgnoreCase) == true
-            || estado?.Contains("entreg", StringComparison.OrdinalIgnoreCase) == true;
+        return StatusContains(estado, "impres")
+            || IsSent(estado);
     }
 
     private static bool IsDelivered(string? estado)
     {
-        return estado?.Contains("entreg", StringComparison.OrdinalIgnoreCase) == true;
+        return IsSent(estado);
     }
+
+    private static bool IsDeleted(string? estadoId, string? estado)
+    {
+        return StatusContains(estadoId, "elimin")
+            || StatusContains(estadoId, "eli")
+            || StatusContains(estado, "elimin");
+    }
+
+    private static bool IsSent(string? estado)
+    {
+        return StatusContains(estado, "envio")
+            || StatusContains(estado, "enviado");
+    }
+
+    private static bool IsPendingPrint(string? estado)
+    {
+        return StatusContains(estado, "carga")
+            || StatusContains(estado, "impresion");
+    }
+
+    private static bool StatusContains(string? estado, string text)
+    {
+        if (string.IsNullOrWhiteSpace(estado))
+        {
+            return false;
+        }
+
+        var normalized = estado.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(char.ToLowerInvariant(character));
+            }
+        }
+
+        return builder.ToString().Contains(text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static byte[] BuildOrdersXlsx(
+        IEnumerable<Models.VentaImpresionCab> pedidos,
+        IReadOnlyDictionary<int, string> vendedores)
+    {
+        var rows = new List<string[]>
+        {
+            new[] { "Pedido", "Fecha carga", "Cliente", "Vendedor", "Tipo", "Metros", "Estado", "Entrega" }
+        };
+
+        rows.AddRange(pedidos.Select(pedido => new[]
+        {
+            pedido.Id.ToString(),
+            pedido.FechaCreacion.ToString("yyyy-MM-dd"),
+            pedido.Cliente?.Nombre ?? string.Empty,
+            vendedores.GetValueOrDefault(pedido.VendedorId, $"Usuario {pedido.VendedorId}"),
+            OrderTypeFromDetails(pedido.Detalles),
+            MetersFromDetails(pedido.Detalles),
+            pedido.EstadoVenta?.Nombre ?? pedido.EstadoVentaId,
+            pedido.FechaEntrega?.ToString("yyyy-MM-dd") ?? string.Empty
+        }));
+
+        using var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddZipEntry(archive, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+                    <Default Extension="xml" ContentType="application/xml"/>
+                    <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+                    <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+                    <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+                </Types>
+                """);
+            AddZipEntry(archive, "_rels/.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+                </Relationships>
+                """);
+            AddZipEntry(archive, "xl/workbook.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                    <sheets>
+                        <sheet name="Pedidos" sheetId="1" r:id="rId1"/>
+                    </sheets>
+                </workbook>
+                """);
+            AddZipEntry(archive, "xl/_rels/workbook.xml.rels", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+                    <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+                </Relationships>
+                """);
+            AddZipEntry(archive, "xl/styles.xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                    <fonts count="2">
+                        <font><sz val="11"/><name val="Calibri"/></font>
+                        <font><b/><sz val="11"/><name val="Calibri"/></font>
+                    </fonts>
+                    <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+                    <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+                    <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+                    <cellXfs count="2">
+                        <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+                        <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+                    </cellXfs>
+                    <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+                </styleSheet>
+                """);
+            AddZipEntry(archive, "xl/worksheets/sheet1.xml", BuildWorksheetXml(rows));
+        }
+
+        return stream.ToArray();
+    }
+
+    private static string BuildWorksheetXml(IReadOnlyList<string[]> rows)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""");
+        builder.AppendLine("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""");
+        builder.AppendLine("<sheetData>");
+
+        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+        {
+            builder.Append("<row r=\"").Append(rowIndex + 1).AppendLine("\">");
+
+            for (var columnIndex = 0; columnIndex < rows[rowIndex].Length; columnIndex++)
+            {
+                builder.Append("<c r=\"")
+                    .Append(CellReference(columnIndex, rowIndex + 1))
+                    .Append("\" t=\"inlineStr\"");
+
+                if (rowIndex == 0)
+                {
+                    builder.Append(" s=\"1\"");
+                }
+
+                builder.Append("><is><t>")
+                    .Append(XmlValue(rows[rowIndex][columnIndex]))
+                    .AppendLine("</t></is></c>");
+            }
+
+            builder.AppendLine("</row>");
+        }
+
+        builder.AppendLine("</sheetData>");
+        builder.AppendLine("</worksheet>");
+        return builder.ToString();
+    }
+
+    private static void AddZipEntry(ZipArchive archive, string path, string content)
+    {
+        var entry = archive.CreateEntry(path);
+        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+        writer.Write(content.Trim());
+    }
+
+    private static string CellReference(int columnIndex, int rowIndex)
+    {
+        var dividend = columnIndex + 1;
+        var columnName = string.Empty;
+
+        while (dividend > 0)
+        {
+            var modulo = (dividend - 1) % 26;
+            columnName = Convert.ToChar('A' + modulo) + columnName;
+            dividend = (dividend - modulo) / 26;
+        }
+
+        return $"{columnName}{rowIndex}";
+    }
+
+    private static string XmlValue(string? value)
+    {
+        return WebUtility.HtmlEncode(value ?? string.Empty);
+    }
+
+    private static string OrderTypeFromDetails(IEnumerable<Models.VentaImpresionDet> details)
+    {
+        var product = details.FirstOrDefault()?.Producto?.Nombre ?? "DTF Textil";
+        return product.Contains("UV", StringComparison.OrdinalIgnoreCase) ? "UV DTF" : "DTF Textil";
+    }
+
+    private static string MetersFromDetails(IEnumerable<Models.VentaImpresionDet> details)
+    {
+        var total = details.Sum(detail => detail.Cantidad);
+        return total == 0 ? "0 m" : $"{total:N2} m";
+    }
+
+    private sealed record FilteredVentasQuery(IQueryable<Models.VentaImpresionCab> Query, bool Forbidden);
 }
