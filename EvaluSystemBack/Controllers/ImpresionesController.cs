@@ -14,11 +14,13 @@ public class ImpresionesController : ControllerBase
 {
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
+    private readonly IConfiguracionService _configuracionService;
 
-    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService)
+    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService)
     {
         _context = context;
         _permisoService = permisoService;
+        _configuracionService = configuracionService;
     }
 
     [HttpGet]
@@ -42,6 +44,7 @@ public class ImpresionesController : ControllerBase
             .Include(x => x.Producto)
             .Include(x => x.TipoMaquina)
             .AsNoTracking()
+            .Where(x => x.CheckImpresion != true)
             .Where(x => !string.IsNullOrWhiteSpace(x.ArchivoDisenio) || !string.IsNullOrWhiteSpace(x.ArchivoDisenioNombre));
 
         if (desde.HasValue)
@@ -108,19 +111,103 @@ public class ImpresionesController : ControllerBase
         var fileName = string.IsNullOrWhiteSpace(detalle.ArchivoDisenioNombre)
             ? $"pedido-{detalle.CabId}-detalle-{detalle.Id}.bin"
             : detalle.ArchivoDisenioNombre;
-        var bytes = detalle.ArchivoDisenio;
         var contentType = GuessContentType(fileName);
 
         if (TryExtractBase64(detalle.ArchivoDisenio, out var extracted))
         {
-            bytes = extracted;
-        }
-        else
-        {
-            return BadRequest(new { message = "Este pedido solo tiene el nombre del archivo. Vuelva a adjuntar el diseno para poder descargarlo." });
+            return Ok(new ExcelFileDto(fileName, contentType, extracted));
         }
 
-        return Ok(new ExcelFileDto(fileName, contentType, bytes));
+        var basePath = await GetBasePathAsync();
+        var safeFilePath = ResolveSafeFilePath(basePath, detalle.ArchivoDisenio);
+        if (safeFilePath is null)
+        {
+            return BadRequest(new { message = "La ruta del archivo no es valida." });
+        }
+
+        if (!System.IO.File.Exists(safeFilePath))
+        {
+            return NotFound(new { message = "El archivo del diseno no existe en el servidor." });
+        }
+
+        var bytes = await System.IO.File.ReadAllBytesAsync(safeFilePath, cancellationToken);
+        return Ok(new ExcelFileDto(fileName, contentType, Convert.ToBase64String(bytes)));
+    }
+
+    [HttpPut("{detalleId:int}/marcar-impreso")]
+    public async Task<ActionResult<ImpresionMarcarDto>> MarcarImpreso(int detalleId, CancellationToken cancellationToken)
+    {
+        if (!await TienePermisoAsync("editar"))
+        {
+            return Forbid();
+        }
+
+        var detalle = await _context.VentasImpresionDet
+            .Include(x => x.Cabecera)
+            .ThenInclude(x => x!.EstadoVenta)
+            .FirstOrDefaultAsync(x => x.Id == detalleId, cancellationToken);
+
+        if (detalle is null || detalle.Cabecera is null)
+        {
+            return NotFound(new { message = "No se encontro el detalle de impresion." });
+        }
+
+        detalle.CheckImpresion = true;
+
+        var detallesPedido = await _context.VentasImpresionDet
+            .Where(x => x.CabId == detalle.CabId)
+            .ToListAsync(cancellationToken);
+        var pedidoCompleto = detallesPedido.All(x => x.Id == detalle.Id || x.CheckImpresion == true);
+
+        if (pedidoCompleto)
+        {
+            var estadoPendienteEnvio = await _context.EstadosVenta
+                .AsNoTracking()
+                .Where(x => x.Estado == "A" && (x.NumeroFlujo == 3 || x.Id == "PE"))
+                .OrderBy(x => x.NumeroFlujo == 3 ? 0 : 1)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (estadoPendienteEnvio is not null)
+            {
+                detalle.Cabecera.EstadoVentaId = estadoPendienteEnvio.Id;
+            }
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var estadoVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == detalle.Cabecera.EstadoVentaId, cancellationToken);
+
+        return Ok(new ImpresionMarcarDto(
+            detalle.Id,
+            detalle.CabId,
+            true,
+            pedidoCompleto,
+            detalle.Cabecera.EstadoVentaId,
+            estadoVenta?.Nombre ?? detalle.Cabecera.EstadoVentaId));
+    }
+
+    private async Task<string> GetBasePathAsync()
+    {
+        var basePath = await _configuracionService.ObtenerValorAsync("FileStoragePath", 1);
+        return string.IsNullOrWhiteSpace(basePath)
+            ? Path.Combine(AppContext.BaseDirectory, "Archivos")
+            : basePath;
+    }
+
+    private static string? ResolveSafeFilePath(string basePath, string requestedPath)
+    {
+        var fullBasePath = Path.GetFullPath(basePath);
+        var fullRequestedPath = Path.GetFullPath(requestedPath);
+
+        var normalizedBasePath = fullBasePath.EndsWith(Path.DirectorySeparatorChar)
+            ? fullBasePath
+            : fullBasePath + Path.DirectorySeparatorChar;
+
+        return fullRequestedPath.StartsWith(normalizedBasePath, StringComparison.OrdinalIgnoreCase)
+            ? fullRequestedPath
+            : null;
     }
 
     private async Task<bool> TienePermisoAsync(string accion)

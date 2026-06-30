@@ -56,7 +56,7 @@ public class VentaImpresionService : IVentaImpresionService
             MontoPagado = request.MontoPagado ?? 0,
             EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId,
             FechaEntrega = request.FechaEntrega,
-            ComprobantePago = request.ComprobantePago,
+            ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago),
             ComprobantePagoNombre = request.ComprobantePagoNombre,
             Observacion = request.Observacion,
             MetodoEntrega = NormalizeMetodoEntrega(request.MetodoEntrega)
@@ -75,7 +75,7 @@ public class VentaImpresionService : IVentaImpresionService
                 Cantidad = detalleRequest.Cantidad,
                 PrecioUnitario = detalleRequest.PrecioUnitario,
                 PrecioExtra = detalleRequest.PrecioExtra ?? 0,
-                ArchivoDisenio = detalleRequest.ArchivoDisenio,
+                ArchivoDisenio = NormalizarRutaArchivo(detalleRequest.ArchivoDisenio),
                 ArchivoDisenioNombre = detalleRequest.ArchivoDisenioNombre,
                 Observacion = detalleRequest.Observacion,
                 EstadoItem = string.IsNullOrWhiteSpace(detalleRequest.EstadoItem) ? EstadoDetalleInicial : detalleRequest.EstadoItem,
@@ -140,7 +140,7 @@ public class VentaImpresionService : IVentaImpresionService
             cabecera.FormaPagoId = request.FormaPagoId;
             cabecera.MontoPagado = request.MontoPagado ?? 0;
             cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
-            cabecera.ComprobantePago = request.ComprobantePago;
+            cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
             cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
 
             await _context.SaveChangesAsync();
@@ -168,7 +168,7 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.MontoPagado = request.MontoPagado ?? 0;
         cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
         cabecera.FechaEntrega = request.FechaEntrega;
-        cabecera.ComprobantePago = request.ComprobantePago;
+        cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
         SetMetodoEntrega(cabecera, request.MetodoEntrega);
@@ -191,7 +191,7 @@ public class VentaImpresionService : IVentaImpresionService
             detalle.Cantidad = detalleRequest.Cantidad;
             detalle.PrecioUnitario = detalleRequest.PrecioUnitario;
             detalle.PrecioExtra = detalleRequest.PrecioExtra ?? 0;
-            detalle.ArchivoDisenio = detalleRequest.ArchivoDisenio;
+            detalle.ArchivoDisenio = NormalizarRutaArchivo(detalleRequest.ArchivoDisenio);
             detalle.ArchivoDisenioNombre = detalleRequest.ArchivoDisenioNombre;
             detalle.Observacion = detalleRequest.Observacion;
             detalle.EstadoItem = string.IsNullOrWhiteSpace(detalleRequest.EstadoItem) ? EstadoDetalleInicial : detalleRequest.EstadoItem;
@@ -233,7 +233,7 @@ public class VentaImpresionService : IVentaImpresionService
             cabecera.FormaPagoId = request.FormaPagoId;
             cabecera.MontoPagado = request.MontoPagado ?? 0;
             cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
-            cabecera.ComprobantePago = request.ComprobantePago;
+            cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
             cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
 
             await _context.SaveChangesAsync();
@@ -266,7 +266,7 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.MontoPagado = request.MontoPagado ?? 0;
         cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
         cabecera.FechaEntrega = request.FechaEntrega;
-        cabecera.ComprobantePago = request.ComprobantePago;
+        cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
         SetMetodoEntrega(cabecera, request.MetodoEntrega);
@@ -363,7 +363,7 @@ public class VentaImpresionService : IVentaImpresionService
             Cantidad = request.Cantidad,
             PrecioUnitario = request.PrecioUnitario,
             PrecioExtra = request.PrecioExtra ?? 0,
-            ArchivoDisenio = request.ArchivoDisenio,
+            ArchivoDisenio = NormalizarRutaArchivo(request.ArchivoDisenio),
             ArchivoDisenioNombre = request.ArchivoDisenioNombre,
             Observacion = request.Observacion,
             EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? EstadoDetalleInicial : request.EstadoItem,
@@ -409,7 +409,7 @@ public class VentaImpresionService : IVentaImpresionService
         detalle.Cantidad = request.Cantidad;
         detalle.PrecioUnitario = request.PrecioUnitario;
         detalle.PrecioExtra = request.PrecioExtra ?? 0;
-        detalle.ArchivoDisenio = request.ArchivoDisenio;
+        detalle.ArchivoDisenio = NormalizarRutaArchivo(request.ArchivoDisenio);
         detalle.ArchivoDisenioNombre = request.ArchivoDisenioNombre;
         detalle.Observacion = request.Observacion;
         detalle.EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? EstadoDetalleInicial : request.EstadoItem;
@@ -888,6 +888,27 @@ public class VentaImpresionService : IVentaImpresionService
             cabecera.UsuarioEntregaPedidoId = null;
             cabecera.FechaTomaDelivery = null;
         }
+    }
+
+    private static string? NormalizarRutaArchivo(string? ruta)
+    {
+        if (string.IsNullOrWhiteSpace(ruta))
+        {
+            return null;
+        }
+
+        var value = ruta.Trim();
+        if (value.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("El archivo debe guardarse en el servidor. En la venta solo se guarda la ruta del archivo.");
+        }
+
+        if (value.Length > 500)
+        {
+            throw new InvalidOperationException("La ruta del archivo no puede superar 500 caracteres.");
+        }
+
+        return value;
     }
 
     private async Task ValidarPagoAsync(decimal? montoPagadoRequest, string? estadoPagadoIdRequest, decimal totalVenta)

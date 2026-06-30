@@ -14,7 +14,7 @@ public class VentaImpresionCab
     public string? ComprobantePago { get; set; }
     public string? ComprobantePagoNombre { get; set; }
     public string? Observacion { get; set; }
-    public string MetodoEntrega { get; set; } = "DELIVERY";
+    public string? MetodoEntrega { get; set; }
     public int? UsuarioEntregaPedidoId { get; set; }
     public DateTime? FechaTomaDelivery { get; set; }
     public DateTime FechaCreacion { get; set; }

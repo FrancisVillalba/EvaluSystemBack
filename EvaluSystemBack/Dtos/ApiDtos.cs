@@ -10,6 +10,14 @@ public record DepartamentoDto(int Id, string Nombre, bool Estado);
 
 public record CiudadDto(int Id, int DepartamentoId, string? Departamento, int CodigoDistrito, string Nombre, bool Estado);
 
+public record DepartamentoRequest(int? Id, [Required] string Nombre, bool Estado);
+
+public record CiudadRequest(
+    [Range(1, int.MaxValue)] int DepartamentoId,
+    int? CodigoDistrito,
+    [Required] string Nombre,
+    bool Estado);
+
 public record ClienteDto(
     int Id,
     string? Nombre,
@@ -246,6 +254,14 @@ public record ImpresionArchivoDto(
     string? ArchivoDisenioNombre,
     string EstadoVenta,
     bool Impreso);
+
+public record ImpresionMarcarDto(
+    int DetalleId,
+    int PedidoId,
+    bool DetalleImpreso,
+    bool PedidoCompleto,
+    string EstadoVentaId,
+    string? EstadoVenta);
 
 public record VentaImpresionDetRequest(
     int CabId,

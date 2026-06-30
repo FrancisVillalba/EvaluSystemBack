@@ -1,6 +1,7 @@
 using EvaluSystemBack.Data;
 using EvaluSystemBack.Dtos;
 using EvaluSystemBack.Mapping;
+using EvaluSystemBack.Security;
 using EvaluSystemBack.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -164,8 +165,16 @@ public class VentasImpresionController : ControllerBase
     }
 
     [HttpGet("dashboard")]
+    [SkipPermission]
     public async Task<ActionResult<DashboardSummaryDto>> GetDashboard()
     {
+        var currentUserId = CurrentUserId();
+        if (!currentUserId.HasValue ||
+            !await _permisoService.UsuarioTienePermisoAsync(currentUserId.Value, "Tablero", "ver"))
+        {
+            return Forbid();
+        }
+
         var ventas = await Query().AsNoTracking().ToListAsync();
         var today = DateTime.Today;
         var monthStart = new DateTime(today.Year, today.Month, 1);
@@ -180,7 +189,7 @@ public class VentasImpresionController : ControllerBase
         var pedidosCargadosHoy = ventasDelDia.Count;
         var pedidosImpresos = ventasDelDia.Count(x => IsSent(x.EstadoVenta?.Nombre));
         var pedidosPendientesImpresion = ventasDelDia.Count(x => IsPendingPrint(x.EstadoVenta?.Nombre));
-        var pedidosPendientesEnvioHoy = ventasDelDia.Count(x => !IsSent(x.EstadoVenta?.Nombre));
+        var pedidosEntregadosHoy = ventasDelDia.Count(x => IsDelivered(x.EstadoVenta?.Nombre));
         var pedidosPorMaquina = ventasDelDia
             .SelectMany(x => x.Detalles.Select(d => new
             {
@@ -220,7 +229,7 @@ public class VentasImpresionController : ControllerBase
             pedidosCargadosHoy,
             pedidosImpresos,
             pedidosPendientesImpresion,
-            pedidosPendientesEnvioHoy,
+            pedidosEntregadosHoy,
             pedidosPorMaquina,
             pendientesPago,
             mejoresVendedores));
@@ -454,7 +463,8 @@ public class VentasImpresionController : ControllerBase
 
     private static bool IsDelivered(string? estado)
     {
-        return IsSent(estado);
+        return StatusContains(estado, "enviado")
+            || StatusContains(estado, "entregado");
     }
 
     private static bool IsDeleted(string? estadoId, string? estado)
@@ -467,7 +477,8 @@ public class VentasImpresionController : ControllerBase
     private static bool IsSent(string? estado)
     {
         return StatusContains(estado, "envio")
-            || StatusContains(estado, "enviado");
+            || StatusContains(estado, "enviado")
+            || StatusContains(estado, "entregado");
     }
 
     private static bool IsPendingPrint(string? estado)
