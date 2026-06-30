@@ -18,11 +18,13 @@ public class VentasImpresionController : ControllerBase
 {
     private readonly EvaluSystemDbContext _context;
     private readonly IVentaImpresionService _ventaImpresionService;
+    private readonly IPermisoService _permisoService;
 
-    public VentasImpresionController(EvaluSystemDbContext context, IVentaImpresionService ventaImpresionService)
+    public VentasImpresionController(EvaluSystemDbContext context, IVentaImpresionService ventaImpresionService, IPermisoService permisoService)
     {
         _context = context;
         _ventaImpresionService = ventaImpresionService;
+        _permisoService = permisoService;
     }
 
     [HttpGet]
@@ -102,7 +104,11 @@ public class VentasImpresionController : ControllerBase
         var canViewAll = await CurrentUserCanViewAllOrdersAsync();
         var currentUserId = CurrentUserId();
 
-        var clientes = await _context.Clientes.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
+        var clientes = await _context.Clientes
+            .Include(x => x.DatosEnvio)
+            .AsNoTracking()
+            .Where(x => x.Estado != false)
+            .ToListAsync();
         var formasPago = await _context.FormasPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
         var usuarios = await _context.Usuarios
             .Include(x => x.Persona)
@@ -320,6 +326,8 @@ public class VentasImpresionController : ControllerBase
             .Include(x => x.FormaPago)
             .Include(x => x.EstadoPago)
             .Include(x => x.EstadoVenta)
+            .Include(x => x.MetodoEnvio)
+            .Include(x => x.UsuarioEntregaPedido).ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
     }
@@ -402,13 +410,7 @@ public class VentasImpresionController : ControllerBase
             return false;
         }
 
-        var profileName = await _context.Usuarios
-            .AsNoTracking()
-            .Where(x => x.Id == userId.Value)
-            .Select(x => x.Persona != null && x.Persona.Perfil != null ? x.Persona.Perfil.Nombre : null)
-            .FirstOrDefaultAsync();
-
-        return string.Equals(profileName, "Administrador", StringComparison.OrdinalIgnoreCase);
+        return await _permisoService.UsuarioTienePermisoAsync(userId.Value, "Administracion", "ver");
     }
 
     private static string NombrePersona(Models.Persona persona)
@@ -422,6 +424,26 @@ public class VentasImpresionController : ControllerBase
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
         return string.IsNullOrWhiteSpace(nombre) ? $"Vendedor {persona.Id}" : nombre;
+    }
+
+    private static string NombreUsuario(Models.Usuario usuario)
+    {
+        return usuario.Persona is null
+            ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}"
+            : NombrePersona(usuario.Persona);
+    }
+
+    private static string MetodoEntregaLabel(string? metodoEntrega)
+    {
+        return (metodoEntrega ?? "DELIVERY").ToUpperInvariant() switch
+        {
+            "DELIVERY" => "Delivery",
+            "RETIRO_LOCAL" => "Retiro en local",
+            "MOTOBOLT" => "Motobolt",
+            "TRANSPORTADORA" => "Transportadora",
+            "OTRO" => "Otro",
+            _ => metodoEntrega ?? "Delivery"
+        };
     }
 
     private static bool IsPrinted(string? estado)
@@ -481,7 +503,7 @@ public class VentasImpresionController : ControllerBase
     {
         var rows = new List<string[]>
         {
-            new[] { "Pedido", "Fecha carga", "Cliente", "Vendedor", "Tipo", "Metros", "Estado", "Entrega" }
+            new[] { "Pedido", "Fecha carga", "Cliente", "Vendedor", "Tipo", "Metros", "Estado", "Metodo entrega", "Delivery", "Fecha tomado", "Entrega" }
         };
 
         rows.AddRange(pedidos.Select(pedido => new[]
@@ -493,6 +515,9 @@ public class VentasImpresionController : ControllerBase
             OrderTypeFromDetails(pedido.Detalles),
             MetersFromDetails(pedido.Detalles),
             pedido.EstadoVenta?.Nombre ?? pedido.EstadoVentaId,
+            MetodoEntregaLabel(pedido.MetodoEntrega),
+            pedido.UsuarioEntregaPedido is null ? string.Empty : NombreUsuario(pedido.UsuarioEntregaPedido),
+            pedido.FechaTomaDelivery?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
             pedido.FechaEntrega?.ToString("yyyy-MM-dd") ?? string.Empty
         }));
 

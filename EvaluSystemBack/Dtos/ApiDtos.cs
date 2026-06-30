@@ -19,6 +19,10 @@ public record ClienteDto(
     string? Email,
     string? NroTelefono,
     string? Direccion,
+    int? DepartamentoId,
+    string? Departamento,
+    int? CiudadId,
+    string? Ciudad,
     bool? Estado,
     ClienteDatosEnvioDto? DatosEnvio);
 
@@ -31,6 +35,8 @@ public record ClienteRequest(
     string? Email,
     [Required] string? NroTelefono,
     string? Direccion,
+    int? DepartamentoId,
+    int? CiudadId,
     bool? Estado);
 
 public record ClienteDatosEnvioDto(
@@ -104,9 +110,18 @@ public record TipoMaquinaDto(int Id, string Nombre, bool Estado);
 
 public record TipoMaquinaRequest([Required] string Nombre, bool Estado);
 
-public record UsuarioDto(int Id, string? NombreUsuario, int? PersonaId, string? Persona, int? PerfilId, string? Perfil, bool? Estado);
+public record UsuarioDto(
+    int Id,
+    string? NombreUsuario,
+    int? PersonaId,
+    string? Persona,
+    int? PerfilId,
+    string? Perfil,
+    IEnumerable<int> PerfilIds,
+    string? Perfiles,
+    bool? Estado);
 
-public record UsuarioRequest([Required] string? NombreUsuario, string? Pass, int? PersonaId, bool? Estado);
+public record UsuarioRequest([Required] string? NombreUsuario, string? Pass, int? PersonaId, IEnumerable<int>? PerfilIds, bool? Estado);
 
 public record VentaImpresionOptionsDto(
     IEnumerable<ClienteDto> Clientes,
@@ -139,6 +154,10 @@ public record VentaImpresionCabDto(
     string? ComprobantePago,
     string? ComprobantePagoNombre,
     string? Observacion,
+    string? MetodoEntrega,
+    int? DeliveryUsuarioId,
+    string? DeliveryUsuario,
+    DateTime? FechaTomaDelivery,
     IEnumerable<VentaImpresionDetDto> Detalles);
 
 public record VentaImpresionCabRequest(
@@ -160,12 +179,42 @@ public record VentaImpresionCabRequest(
     [StringLength(255)]
     string? ComprobantePagoNombre,
     [StringLength(500)]
-    string? Observacion);
+    string? Observacion,
+    [StringLength(30)]
+    string? MetodoEntrega);
 
 public record EliminarVentaImpresionRequest(
     [Required]
     [StringLength(500)]
     string Observacion);
+
+public record DeliveryPedidoDto(
+    int Id,
+    DateTime FechaCreacion,
+    DateTime? FechaEntrega,
+    string Cliente,
+    string? Telefono,
+    string? Direccion,
+    string? Departamento,
+    string? Ciudad,
+    string EstadoVentaId,
+    string? EstadoVenta,
+    string Vendedor,
+    decimal TotalVenta,
+    string MetodoEntregaId,
+    string MetodoEntrega,
+    int? DeliveryUsuarioId,
+    string? DeliveryUsuario,
+    DateTime? FechaTomaDelivery,
+    string Productos);
+
+public record DeliveryResumenDto(
+    int UsuarioId,
+    string Delivery,
+    int CantidadPedidos,
+    decimal TotalPedidos,
+    string Ciudades,
+    string MetodosEnvio);
 
 public record VentaImpresionDetDto(
     int Id,
@@ -183,6 +232,20 @@ public record VentaImpresionDetDto(
     string? Observacion,
     string EstadoItem,
     bool? CheckImpresion);
+
+public record ImpresionArchivoDto(
+    int DetalleId,
+    int PedidoId,
+    DateTime FechaCarga,
+    DateTime? FechaEntrega,
+    string Cliente,
+    int TipoMaquinaId,
+    string TipoMaquina,
+    string Producto,
+    decimal Cantidad,
+    string? ArchivoDisenioNombre,
+    string EstadoVenta,
+    bool Impreso);
 
 public record VentaImpresionDetRequest(
     int CabId,
@@ -217,6 +280,8 @@ public record VentaImpresionCompletaRequest(
     string? ComprobantePagoNombre,
     [StringLength(500)]
     string? Observacion,
+    [StringLength(30)]
+    string? MetodoEntrega,
     [StringLength(2)]
     string? EstadoVentaId,
     [Required] IEnumerable<VentaImpresionDetalleCreateRequest> Detalles);
@@ -253,6 +318,8 @@ public record VentaImpresionCompletaUpdateRequest(
     string? ComprobantePagoNombre,
     [StringLength(500)]
     string? Observacion,
+    [StringLength(30)]
+    string? MetodoEntrega,
     [StringLength(2)]
     string? EstadoVentaId,
     [Required] IEnumerable<VentaImpresionDetalleUpdateRequest> Detalles);

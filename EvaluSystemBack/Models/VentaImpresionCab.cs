@@ -14,6 +14,9 @@ public class VentaImpresionCab
     public string? ComprobantePago { get; set; }
     public string? ComprobantePagoNombre { get; set; }
     public string? Observacion { get; set; }
+    public string MetodoEntrega { get; set; } = "DELIVERY";
+    public int? UsuarioEntregaPedidoId { get; set; }
+    public DateTime? FechaTomaDelivery { get; set; }
     public DateTime FechaCreacion { get; set; }
     public int UsuCreacion { get; set; }
     public DateTime FechaModificacion { get; set; }
@@ -23,5 +26,7 @@ public class VentaImpresionCab
     public FormaPago? FormaPago { get; set; }
     public EstadoPago? EstadoPago { get; set; }
     public EstadoVenta? EstadoVenta { get; set; }
+    public MetodoEnvio? MetodoEnvio { get; set; }
+    public Usuario? UsuarioEntregaPedido { get; set; }
     public ICollection<VentaImpresionDet> Detalles { get; set; } = new List<VentaImpresionDet>();
 }

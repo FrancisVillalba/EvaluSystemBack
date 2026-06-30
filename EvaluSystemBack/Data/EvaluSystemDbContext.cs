@@ -21,6 +21,9 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<EstadoVenta> EstadosVenta => Set<EstadoVenta>();
     public DbSet<FormaPago> FormasPago => Set<FormaPago>();
     public DbSet<Formulario> Formularios => Set<Formulario>();
+    public DbSet<LotePago> LotesPago => Set<LotePago>();
+    public DbSet<LotePagoDetalle> LotesPagoDetalle => Set<LotePagoDetalle>();
+    public DbSet<MetodoEnvio> MetodosEnvio => Set<MetodoEnvio>();
     public DbSet<Perfil> Perfiles => Set<Perfil>();
     public DbSet<PerfilFormularioPermiso> PerfilFormularioPermisos => Set<PerfilFormularioPermiso>();
     public DbSet<Persona> Personas => Set<Persona>();
@@ -30,6 +33,7 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<TipoMaquina> TiposMaquina => Set<TipoMaquina>();
     public DbSet<Transportadora> Transportadoras => Set<Transportadora>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<UsuarioPerfil> UsuarioPerfiles => Set<UsuarioPerfil>();
     public DbSet<VentaImpresionCab> VentasImpresionCab => Set<VentaImpresionCab>();
     public DbSet<VentaImpresionDet> VentasImpresionDet => Set<VentaImpresionDet>();
 
@@ -58,6 +62,8 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(100);
             entity.Property(e => e.NroTelefono).HasColumnName("nro_telefono").HasMaxLength(50);
             entity.Property(e => e.Direccion).HasColumnName("direccion").HasMaxLength(200);
+            entity.Property(e => e.DepartamentoId).HasColumnName("departamentoId");
+            entity.Property(e => e.CiudadId).HasColumnName("ciudadId");
             entity.Property(e => e.Estado).HasColumnName("estado");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
@@ -65,6 +71,8 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
             entity.HasOne(e => e.TipoCliente).WithMany(e => e.Clientes).HasForeignKey(e => e.TipoClienteId);
             entity.HasOne(e => e.TipoDocumento).WithMany(e => e.Clientes).HasForeignKey(e => e.TipoDocumentoId);
+            entity.HasOne(e => e.Departamento).WithMany().HasForeignKey(e => e.DepartamentoId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.Ciudad).WithMany().HasForeignKey(e => e.CiudadId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<ClienteDatosEnvio>(entity =>
@@ -152,6 +160,56 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Ruta).HasColumnName("ruta").HasMaxLength(200);
             entity.Property(e => e.Icono).HasColumnName("icono").HasMaxLength(100);
             entity.Property(e => e.Orden).HasColumnName("orden");
+            entity.Property(e => e.Estado).HasColumnName("estado");
+        });
+
+        modelBuilder.Entity<LotePago>(entity =>
+        {
+            entity.ToTable("Lote_pago");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.TipoPago).HasColumnName("tipo_pago").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.FechaGeneracion).HasColumnName("fecha_generacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuarioGeneroId).HasColumnName("usuario_genero_id");
+            entity.Property(e => e.FechaDesde).HasColumnName("fecha_desde").HasColumnType("date");
+            entity.Property(e => e.FechaHasta).HasColumnName("fecha_hasta").HasColumnType("date");
+            entity.Property(e => e.FechaPago).HasColumnName("fecha_pago").HasColumnType("date");
+            entity.Property(e => e.VendedorId).HasColumnName("vendedor_id");
+            entity.Property(e => e.MontoTotal).HasColumnName("monto_total").HasPrecision(18, 2);
+            entity.Property(e => e.CantidadPersonas).HasColumnName("cantidad_personas");
+            entity.Property(e => e.NombreArchivo).HasColumnName("nombre_archivo").HasMaxLength(255).IsRequired();
+            entity.Property(e => e.Estado).HasColumnName("estado").HasMaxLength(30).IsRequired();
+            entity.Property(e => e.ContenidoTxt).HasColumnName("contenido_txt").HasColumnType("varchar(max)").IsRequired();
+            entity.HasOne(e => e.UsuarioGenero).WithMany().HasForeignKey(e => e.UsuarioGeneroId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.Vendedor).WithMany().HasForeignKey(e => e.VendedorId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<LotePagoDetalle>(entity =>
+        {
+            entity.ToTable("Lote_pago_detalle");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.LotePagoId).HasColumnName("lote_pago_id");
+            entity.Property(e => e.UsuarioId).HasColumnName("usuario_id");
+            entity.Property(e => e.Vendedor).HasColumnName("vendedor").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Documento).HasColumnName("documento").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CuentaDebitoEmpresa).HasColumnName("cuenta_debito_empresa").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Concepto).HasColumnName("concepto").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Monto).HasColumnName("monto").HasPrecision(18, 2);
+            entity.Property(e => e.EsAguinaldo).HasColumnName("es_aguinaldo").HasMaxLength(2).IsRequired();
+            entity.Property(e => e.FechaPago).HasColumnName("fecha_pago").HasColumnType("date");
+            entity.Property(e => e.TipoCuenta).HasColumnName("tipo_cuenta").HasMaxLength(3).IsRequired();
+            entity.Property(e => e.LineaTxt).HasColumnName("linea_txt").HasMaxLength(1000).IsRequired();
+            entity.HasOne(e => e.LotePago).WithMany(e => e.Detalles).HasForeignKey(e => e.LotePagoId);
+            entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<MetodoEnvio>(entity =>
+        {
+            entity.ToTable("Metodo_envio");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").HasMaxLength(30).ValueGeneratedNever();
+            entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(80).IsRequired();
             entity.Property(e => e.Estado).HasColumnName("estado");
         });
 
@@ -267,6 +325,20 @@ public class EvaluSystemDbContext : DbContext
             entity.HasOne(e => e.Persona).WithMany(e => e.Usuarios).HasForeignKey(e => e.PersonaId);
         });
 
+        modelBuilder.Entity<UsuarioPerfil>(entity =>
+        {
+            entity.ToTable("Usuario_perfil");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.UsuarioId, e.PerfilId }).IsUnique();
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.UsuarioId).HasColumnName("usuario_id");
+            entity.Property(e => e.PerfilId).HasColumnName("perfil_id");
+            entity.Property(e => e.Estado).HasColumnName("estado");
+            entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
+            entity.HasOne(e => e.Usuario).WithMany(e => e.Perfiles).HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Perfil).WithMany(e => e.Usuarios).HasForeignKey(e => e.PerfilId).OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<VentaImpresionCab>(entity =>
         {
             entity.ToTable("Ventas_impresion_cab");
@@ -282,6 +354,9 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.ComprobantePago).HasColumnName("comprobante_pago").HasMaxLength(500);
             entity.Property(e => e.ComprobantePagoNombre).HasColumnName("comprobante_pago_nombre").HasMaxLength(255);
             entity.Property(e => e.Observacion).HasColumnName("observacion").HasMaxLength(500);
+            entity.Property(e => e.MetodoEntrega).HasColumnName("metodo_entrega").HasMaxLength(30).HasDefaultValue("DELIVERY");
+            entity.Property(e => e.UsuarioEntregaPedidoId).HasColumnName("usuario_entrega_pedido_id");
+            entity.Property(e => e.FechaTomaDelivery).HasColumnName("fecha_toma_delivery").HasColumnType("datetime");
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
             entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
@@ -290,6 +365,8 @@ public class EvaluSystemDbContext : DbContext
             entity.HasOne(e => e.FormaPago).WithMany(e => e.Ventas).HasForeignKey(e => e.FormaPagoId);
             entity.HasOne(e => e.EstadoPago).WithMany(e => e.Ventas).HasForeignKey(e => e.EstadoPagadoId);
             entity.HasOne(e => e.EstadoVenta).WithMany(e => e.Ventas).HasForeignKey(e => e.EstadoVentaId);
+            entity.HasOne(e => e.MetodoEnvio).WithMany(e => e.Ventas).HasForeignKey(e => e.MetodoEntrega).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.UsuarioEntregaPedido).WithMany().HasForeignKey(e => e.UsuarioEntregaPedidoId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<VentaImpresionDet>(entity =>

@@ -13,4 +13,5 @@ public class Usuario
     public int UsuModificacion { get; set; }
 
     public Persona? Persona { get; set; }
+    public ICollection<UsuarioPerfil> Perfiles { get; set; } = new List<UsuarioPerfil>();
 }

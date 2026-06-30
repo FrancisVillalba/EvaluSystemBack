@@ -17,14 +17,75 @@ public class PermisoService : IPermisoService
 
     public async Task<IEnumerable<PerfilFormularioPermisoDto>> ObtenerPermisosPorUsuarioAsync(int usuarioId)
     {
+        var perfilIds = await PerfilIdsPorUsuarioAsync(usuarioId);
+
+        if (perfilIds.Count == 0)
+        {
+            return Enumerable.Empty<PerfilFormularioPermisoDto>();
+        }
+
+        var permisos = await _context.PerfilFormularioPermisos
+            .Include(x => x.Perfil)
+            .Include(x => x.Formulario)
+            .AsNoTracking()
+            .Where(x => perfilIds.Contains(x.PerfilId) && x.Formulario != null && x.Formulario.Estado && x.PuedeVer)
+            .GroupBy(x => x.FormularioId)
+            .Select(group => new
+            {
+                FormularioId = group.Key,
+                PuedeVer = group.Any(x => x.PuedeVer),
+                PuedeCrear = group.Any(x => x.PuedeCrear),
+                PuedeEditar = group.Any(x => x.PuedeEditar),
+                PuedeEliminar = group.Any(x => x.PuedeEliminar)
+            })
+            .ToListAsync();
+
+        var formularios = await _context.Formularios
+            .AsNoTracking()
+            .Where(x => permisos.Select(p => p.FormularioId).Contains(x.Id))
+            .OrderBy(x => x.Orden)
+            .ThenBy(x => x.Nombre)
+            .ToListAsync();
+
+        return formularios.Select(form =>
+        {
+            var permiso = permisos.First(x => x.FormularioId == form.Id);
+            return new PerfilFormularioPermisoDto(
+                0,
+                0,
+                "Perfiles del usuario",
+                form.Id,
+                form.Nombre,
+                form.Descripcion,
+                form.Ruta,
+                form.Icono,
+                form.Orden,
+                permiso.PuedeVer,
+                permiso.PuedeCrear,
+                permiso.PuedeEditar,
+                permiso.PuedeEliminar);
+        });
+    }
+
+    private async Task<List<int>> PerfilIdsPorUsuarioAsync(int usuarioId)
+    {
+        var perfilIds = await _context.UsuarioPerfiles
+            .Where(x => x.UsuarioId == usuarioId && x.Estado)
+            .Select(x => x.PerfilId)
+            .Distinct()
+            .ToListAsync();
+
+        if (perfilIds.Count > 0)
+        {
+            return perfilIds;
+        }
+
         var perfilId = await _context.Usuarios
             .Where(x => x.Id == usuarioId)
             .Select(x => x.Persona != null ? x.Persona.PerfilId : null)
             .FirstOrDefaultAsync();
 
-        return perfilId.HasValue
-            ? await ObtenerPermisosPorPerfilAsync(perfilId.Value)
-            : Enumerable.Empty<PerfilFormularioPermisoDto>();
+        return perfilId.HasValue ? new List<int> { perfilId.Value } : new List<int>();
     }
 
     public async Task<IEnumerable<PerfilFormularioPermisoDto>> ObtenerPermisosPorPerfilAsync(int perfilId)
@@ -43,14 +104,19 @@ public class PermisoService : IPermisoService
 
     public async Task<bool> UsuarioTienePermisoAsync(int usuarioId, string formulario, string accion)
     {
-        var permiso = await _context.PerfilFormularioPermisos
+        var perfilIds = await PerfilIdsPorUsuarioAsync(usuarioId);
+        if (perfilIds.Count == 0)
+        {
+            return false;
+        }
+
+        var permisos = await _context.PerfilFormularioPermisos
             .Include(x => x.Formulario)
             .Where(x =>
                 x.Formulario != null &&
                 x.Formulario.Nombre == formulario &&
                 x.Formulario.Estado &&
-                x.Perfil != null &&
-                x.Perfil.Personas.Any(p => p.Usuarios.Any(u => u.Id == usuarioId)))
+                perfilIds.Contains(x.PerfilId))
             .Select(x => new
             {
                 x.PuedeVer,
@@ -58,14 +124,14 @@ public class PermisoService : IPermisoService
                 x.PuedeEditar,
                 x.PuedeEliminar
             })
-            .FirstOrDefaultAsync();
+            .ToListAsync();
 
         return accion.ToLowerInvariant() switch
         {
-            "ver" => permiso?.PuedeVer == true,
-            "crear" => permiso?.PuedeCrear == true,
-            "editar" => permiso?.PuedeEditar == true,
-            "eliminar" => permiso?.PuedeEliminar == true,
+            "ver" => permisos.Any(x => x.PuedeVer),
+            "crear" => permisos.Any(x => x.PuedeCrear),
+            "editar" => permisos.Any(x => x.PuedeEditar),
+            "eliminar" => permisos.Any(x => x.PuedeEliminar),
             _ => false
         };
     }

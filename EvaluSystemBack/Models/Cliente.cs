@@ -10,6 +10,8 @@ public class Cliente
     public string? Email { get; set; }
     public string? NroTelefono { get; set; }
     public string? Direccion { get; set; }
+    public int? DepartamentoId { get; set; }
+    public int? CiudadId { get; set; }
     public bool? Estado { get; set; }
     public int UsuCreacion { get; set; }
     public DateTime FechaCreacion { get; set; }
@@ -18,6 +20,8 @@ public class Cliente
 
     public TipoCliente? TipoCliente { get; set; }
     public TipoDocumento? TipoDocumento { get; set; }
+    public Departamento? Departamento { get; set; }
+    public Ciudad? Ciudad { get; set; }
     public ClienteDatosEnvio? DatosEnvio { get; set; }
     public ICollection<VentaImpresionCab> Ventas { get; set; } = new List<VentaImpresionCab>();
 }

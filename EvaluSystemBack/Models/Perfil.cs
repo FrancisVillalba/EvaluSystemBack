@@ -13,4 +13,5 @@ public class Perfil
 
     public ICollection<Persona> Personas { get; set; } = new List<Persona>();
     public ICollection<PerfilFormularioPermiso> FormularioPermisos { get; set; } = new List<PerfilFormularioPermiso>();
+    public ICollection<UsuarioPerfil> Usuarios { get; set; } = new List<UsuarioPerfil>();
 }

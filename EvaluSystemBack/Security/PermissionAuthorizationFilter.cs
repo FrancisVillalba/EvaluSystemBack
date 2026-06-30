@@ -18,6 +18,8 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         ["Transportadoras"] = "Transportadoras",
         ["Productos"] = "Productos",
         ["VentasImpresion"] = "Ventas",
+        ["Delivery"] = "Envio",
+        ["Reportes"] = "Ventas",
         ["VentasImpresionCab"] = "Ventas",
         ["VentasImpresionDet"] = "Ventas",
         ["Archivos"] = "Ventas",

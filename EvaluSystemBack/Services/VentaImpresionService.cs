@@ -20,6 +20,7 @@ public class VentaImpresionService : IVentaImpresionService
     private const int FlujoEnviado = 4;
     private const int FlujoEliminado = 5;
     private const int UltimoFlujoEditable = FlujoEnvio;
+    private const string MetodoEntregaDelivery = "DELIVERY";
 
     private readonly EvaluSystemDbContext _context;
 
@@ -57,7 +58,8 @@ public class VentaImpresionService : IVentaImpresionService
             FechaEntrega = request.FechaEntrega,
             ComprobantePago = request.ComprobantePago,
             ComprobantePagoNombre = request.ComprobantePagoNombre,
-            Observacion = request.Observacion
+            Observacion = request.Observacion,
+            MetodoEntrega = NormalizeMetodoEntrega(request.MetodoEntrega)
         };
 
         _context.VentasImpresionCab.Add(cabecera);
@@ -169,6 +171,7 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.ComprobantePago = request.ComprobantePago;
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
+        SetMetodoEntrega(cabecera, request.MetodoEntrega);
         cabecera.TotalVenta = totalVenta;
 
         var detallesParaEliminar = cabecera.Detalles
@@ -266,6 +269,7 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.ComprobantePago = request.ComprobantePago;
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
+        SetMetodoEntrega(cabecera, request.MetodoEntrega);
 
         await _context.SaveChangesAsync();
 
@@ -802,6 +806,7 @@ public class VentaImpresionService : IVentaImpresionService
             && ValoresIguales(cabecera.EstadoVentaId, estadoVentaId)
             && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
             && ValoresIguales(cabecera.Observacion, request.Observacion)
+            && ValoresIguales(cabecera.MetodoEntrega, NormalizeMetodoEntrega(request.MetodoEntrega))
             && DetallesIguales(cabecera.Detalles, detallesRequest);
     }
 
@@ -812,7 +817,8 @@ public class VentaImpresionService : IVentaImpresionService
             && cabecera.TotalVenta == request.TotalVenta
             && ValoresIguales(cabecera.EstadoVentaId, request.EstadoVentaId)
             && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
-            && ValoresIguales(cabecera.Observacion, request.Observacion);
+            && ValoresIguales(cabecera.Observacion, request.Observacion)
+            && ValoresIguales(cabecera.MetodoEntrega, NormalizeMetodoEntrega(request.MetodoEntrega));
     }
 
     private static bool DetallesIguales(
@@ -858,6 +864,30 @@ public class VentaImpresionService : IVentaImpresionService
     private static bool ValoresIguales(string? actual, string? request)
     {
         return string.Equals(actual ?? string.Empty, request ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeMetodoEntrega(string? metodoEntrega)
+    {
+        var normalized = (metodoEntrega ?? MetodoEntregaDelivery).Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "DELIVERY" => "DELIVERY",
+            "RETIRO_LOCAL" => "RETIRO_LOCAL",
+            "MOTOBOLT" => "MOTOBOLT",
+            "TRANSPORTADORA" => "TRANSPORTADORA",
+            "OTRO" => "OTRO",
+            _ => MetodoEntregaDelivery
+        };
+    }
+
+    private static void SetMetodoEntrega(VentaImpresionCab cabecera, string? metodoEntrega)
+    {
+        cabecera.MetodoEntrega = NormalizeMetodoEntrega(metodoEntrega);
+        if (!string.Equals(cabecera.MetodoEntrega, MetodoEntregaDelivery, StringComparison.OrdinalIgnoreCase))
+        {
+            cabecera.UsuarioEntregaPedidoId = null;
+            cabecera.FechaTomaDelivery = null;
+        }
     }
 
     private async Task ValidarPagoAsync(decimal? montoPagadoRequest, string? estadoPagadoIdRequest, decimal totalVenta)
@@ -928,6 +958,8 @@ public class VentaImpresionService : IVentaImpresionService
             .Include(x => x.FormaPago)
             .Include(x => x.EstadoPago)
             .Include(x => x.EstadoVenta)
+            .Include(x => x.MetodoEnvio)
+            .Include(x => x.UsuarioEntregaPedido).ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
     }

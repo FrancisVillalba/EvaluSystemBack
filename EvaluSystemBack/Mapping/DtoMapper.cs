@@ -41,6 +41,10 @@ public static class DtoMapper
             entity.Email,
             entity.NroTelefono,
             entity.Direccion,
+            entity.DepartamentoId,
+            entity.Departamento?.Nombre,
+            entity.CiudadId,
+            entity.Ciudad?.Nombre,
             entity.Estado,
             entity.DatosEnvio?.ToDto());
     }
@@ -55,6 +59,8 @@ public static class DtoMapper
         entity.Email = request.Email;
         entity.NroTelefono = request.NroTelefono;
         entity.Direccion = request.Direccion;
+        entity.DepartamentoId = request.DepartamentoId;
+        entity.CiudadId = request.CiudadId;
         entity.Estado = request.Estado;
         return entity;
     }
@@ -207,14 +213,24 @@ public static class DtoMapper
             entity.Persona?.PrimerApellido,
             entity.Persona?.SegundoApellido
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        var perfiles = entity.Perfiles
+            .Where(x => x.Estado && x.Perfil != null)
+            .OrderBy(x => x.Perfil!.Nombre)
+            .ToList();
+        var perfilIds = perfiles.Select(x => x.PerfilId).ToList();
+        var perfilNombres = string.Join(", ", perfiles.Select(x => x.Perfil!.Nombre));
+        var legacyPerfilId = entity.Persona?.PerfilId;
+        var legacyPerfil = entity.Persona?.Perfil?.Nombre;
 
         return new UsuarioDto(
             entity.Id,
             entity.NombreUsuario,
             entity.PersonaId,
             string.IsNullOrWhiteSpace(persona) ? null : persona,
-            entity.Persona?.PerfilId,
-            entity.Persona?.Perfil?.Nombre,
+            perfilIds.FirstOrDefault() == 0 ? legacyPerfilId : perfilIds.First(),
+            string.IsNullOrWhiteSpace(perfilNombres) ? legacyPerfil : perfilNombres,
+            perfilIds.Count > 0 ? perfilIds : legacyPerfilId.HasValue ? new[] { legacyPerfilId.Value } : Array.Empty<int>(),
+            string.IsNullOrWhiteSpace(perfilNombres) ? legacyPerfil : perfilNombres,
             entity.Estado);
     }
 
@@ -247,6 +263,10 @@ public static class DtoMapper
             entity.ComprobantePago,
             entity.ComprobantePagoNombre,
             entity.Observacion,
+            entity.MetodoEntrega,
+            entity.UsuarioEntregaPedidoId,
+            entity.UsuarioEntregaPedido is null ? null : NombreUsuario(entity.UsuarioEntregaPedido),
+            entity.FechaTomaDelivery,
             entity.Detalles.Select(x => x.ToDto()));
     }
 
@@ -264,7 +284,26 @@ public static class DtoMapper
         entity.ComprobantePago = request.ComprobantePago;
         entity.ComprobantePagoNombre = request.ComprobantePagoNombre;
         entity.Observacion = request.Observacion;
+        entity.MetodoEntrega = string.IsNullOrWhiteSpace(request.MetodoEntrega) ? "DELIVERY" : request.MetodoEntrega;
         return entity;
+    }
+
+    private static string NombreUsuario(Usuario usuario)
+    {
+        if (usuario.Persona is null)
+        {
+            return usuario.NombreUsuario ?? $"Usuario {usuario.Id}";
+        }
+
+        var nombre = string.Join(" ", new[]
+        {
+            usuario.Persona.PrimerNombre,
+            usuario.Persona.SegundoNombre,
+            usuario.Persona.PrimerApellido,
+            usuario.Persona.SegundoApellido
+        }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+        return string.IsNullOrWhiteSpace(nombre) ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}" : nombre;
     }
 
     public static VentaImpresionDetDto ToDto(this VentaImpresionDet entity)

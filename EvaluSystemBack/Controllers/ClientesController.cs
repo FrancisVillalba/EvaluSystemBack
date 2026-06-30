@@ -30,6 +30,8 @@ public class ClientesController : ControllerBase
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = _context.Clientes
+            .Include(x => x.Departamento)
+            .Include(x => x.Ciudad)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Departamento)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
@@ -47,7 +49,7 @@ public class ClientesController : ControllerBase
 
         if (ciudadId.HasValue)
         {
-            query = query.Where(x => x.DatosEnvio != null && x.DatosEnvio.CiudadId == ciudadId.Value);
+            query = query.Where(x => x.CiudadId == ciudadId.Value || (x.DatosEnvio != null && x.DatosEnvio.CiudadId == ciudadId.Value));
         }
 
         if (estado.HasValue)
@@ -79,6 +81,8 @@ public class ClientesController : ControllerBase
     public async Task<ActionResult<ClienteDto>> GetById(int id)
     {
         var cliente = await _context.Clientes
+            .Include(x => x.Departamento)
+            .Include(x => x.Ciudad)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Departamento)
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
