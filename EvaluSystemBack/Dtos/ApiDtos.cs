@@ -131,6 +131,8 @@ public record UsuarioDto(
 
 public record UsuarioRequest([Required] string? NombreUsuario, string? Pass, int? PersonaId, IEnumerable<int>? PerfilIds, bool? Estado);
 
+public record MensajePendienteDto(string Clave, string Titulo, string Mensaje, string Tipo);
+
 public record VentaImpresionOptionsDto(
     IEnumerable<ClienteDto> Clientes,
     IEnumerable<CatalogDto> FormasPago,

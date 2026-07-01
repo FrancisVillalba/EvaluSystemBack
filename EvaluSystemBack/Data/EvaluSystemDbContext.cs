@@ -33,6 +33,7 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<TipoMaquina> TiposMaquina => Set<TipoMaquina>();
     public DbSet<Transportadora> Transportadoras => Set<Transportadora>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<UsuarioMensajeAceptado> UsuarioMensajesAceptados => Set<UsuarioMensajeAceptado>();
     public DbSet<UsuarioPerfil> UsuarioPerfiles => Set<UsuarioPerfil>();
     public DbSet<VentaImpresionCab> VentasImpresionCab => Set<VentaImpresionCab>();
     public DbSet<VentaImpresionDet> VentasImpresionDet => Set<VentaImpresionDet>();
@@ -323,6 +324,18 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion");
             entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
             entity.HasOne(e => e.Persona).WithMany(e => e.Usuarios).HasForeignKey(e => e.PersonaId);
+        });
+
+        modelBuilder.Entity<UsuarioMensajeAceptado>(entity =>
+        {
+            entity.ToTable("Usuario_mensaje_aceptado");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.UsuarioId, e.Clave }).IsUnique();
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.UsuarioId).HasColumnName("usuario_id");
+            entity.Property(e => e.Clave).HasColumnName("clave").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.FechaAceptado).HasColumnName("fecha_aceptado").HasColumnType("datetime");
+            entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<UsuarioPerfil>(entity =>

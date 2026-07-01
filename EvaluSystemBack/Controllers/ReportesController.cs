@@ -19,6 +19,9 @@ public class ReportesController : ControllerBase
     private const string EstadoLoteGenerado = "Generado";
     private const string EstadoLotePagado = "Pagado";
     private const string EstadoLoteAnulado = "Anulado";
+    private const int FlujoImpresion = 2;
+    private const int FlujoPendienteEnvio = 3;
+    private const int FlujoEntregado = 4;
     private readonly EvaluSystemDbContext _context;
     private readonly IWebHostEnvironment _environment;
 
@@ -221,6 +224,11 @@ public class ReportesController : ControllerBase
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
+            .Where(x =>
+                x.EstadoVenta != null &&
+                (x.EstadoVenta.NumeroFlujo == FlujoImpresion ||
+                 x.EstadoVenta.NumeroFlujo == FlujoPendienteEnvio ||
+                 x.EstadoVenta.NumeroFlujo == FlujoEntregado))
             .OrderBy(x => x.VendedorId)
             .ThenBy(x => x.FechaCreacion)
             .ToListAsync();
