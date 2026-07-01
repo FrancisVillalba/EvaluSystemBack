@@ -1,19 +1,58 @@
-bin/
-obj/
+## Visual Studio
 .vs/
 .vscode/
-
+.idea/
 *.user
+*.rsuser
 *.suo
 *.userosscache
 *.sln.docstates
+*.ncrunch*
+*.DotSettings.user
 
+## Build results
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+artifacts/
+
+## .NET
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## ASP.NET / local configuration
 appsettings.Development.json
 appsettings.Local.json
+appsettings.*.local.json
+appsettings.*.Local.json
+.env
+.env.*
+!.env.example
 
+## Generated files / uploads
 Archivos/
+uploads/
+wwwroot/uploads/
 logs/
 *.log
 
-TestResults/
-coverage/
+## Local databases
+*.db
+*.sqlite
+*.sqlite3
+*.mdf
+*.ldf
+
+## OS/editor
+.DS_Store
+Thumbs.db
+desktop.ini
