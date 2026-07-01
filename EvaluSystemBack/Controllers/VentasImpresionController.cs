@@ -317,15 +317,29 @@ public class VentasImpresionController : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
-        var eliminado = await _ventaImpresionService.EliminarVentaAsync(id);
-        return eliminado ? NoContent() : NotFound();
+        try
+        {
+            var eliminado = await _ventaImpresionService.EliminarVentaAsync(id);
+            return eliminado ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPut("{id:int}/marcar-eliminado")]
     public async Task<ActionResult<VentaImpresionCabDto>> MarkDeleted(int id, EliminarVentaImpresionRequest request)
     {
-        var venta = await _ventaImpresionService.MarcarVentaEliminadaAsync(id, request);
-        return venta is null ? NotFound() : Ok(venta);
+        try
+        {
+            var venta = await _ventaImpresionService.MarcarVentaEliminadaAsync(id, request);
+            return venta is null ? NotFound() : Ok(venta);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     private IQueryable<Models.VentaImpresionCab> Query()

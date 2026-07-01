@@ -297,6 +297,8 @@ public class VentaImpresionService : IVentaImpresionService
             return null;
         }
 
+        await ValidarVentaEliminableAsync(cabecera);
+
         var estadoEliminado = await _context.EstadosVenta
             .AsNoTracking()
             .Where(x => x.NumeroFlujo == FlujoEliminado)
@@ -332,7 +334,7 @@ public class VentaImpresionService : IVentaImpresionService
             return false;
         }
 
-        await ValidarVentaEditableAsync(cabecera);
+        await ValidarVentaEliminableAsync(cabecera);
 
         _context.VentasImpresionDet.RemoveRange(cabecera.Detalles);
         _context.VentasImpresionCab.Remove(cabecera);
@@ -663,6 +665,32 @@ public class VentaImpresionService : IVentaImpresionService
         if ((estado.NumeroFlujo ?? int.MaxValue) > UltimoFlujoEditable)
         {
             throw new InvalidOperationException("La venta ya avanzo de estado y no puede modificarse.");
+        }
+    }
+
+    private async Task ValidarVentaEliminableAsync(VentaImpresionCab cabecera)
+    {
+        var estado = cabecera.EstadoVenta ?? await _context.EstadosVenta
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == cabecera.EstadoVentaId);
+
+        if (estado is null)
+        {
+            throw new InvalidOperationException("El estado de la venta no existe.");
+        }
+
+        if (!string.Equals(estado.Estado, "A", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("El estado actual de la venta esta inactivo.");
+        }
+
+        var esCarga = (estado.NumeroFlujo ?? int.MaxValue) == FlujoCarga
+            || string.Equals(estado.Id, EstadoVentaInicial, StringComparison.OrdinalIgnoreCase)
+            || (estado.Nombre?.Contains("Carga", StringComparison.OrdinalIgnoreCase) ?? false);
+
+        if (!esCarga)
+        {
+            throw new InvalidOperationException("Solo se puede eliminar un pedido cuando esta en estado Carga.");
         }
     }
 
