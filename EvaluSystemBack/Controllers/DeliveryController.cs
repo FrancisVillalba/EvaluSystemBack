@@ -19,6 +19,8 @@ public class DeliveryController : ControllerBase
     private const string MetodoEntregaTransportadora = "TRANSPORTADORA";
     private const string MetodoEntregaMotobolt = "MOTOBOLT";
     private const string MetodoEntregaRetiroLocal = "RETIRO_LOCAL";
+    private const string EstadoRutaAbierto = "Abierto";
+    private const string EstadoRutaCerrado = "Cerrado";
     private readonly EvaluSystemDbContext _context;
 
     public DeliveryController(EvaluSystemDbContext context)
@@ -77,11 +79,58 @@ public class DeliveryController : ControllerBase
         var pedidos = await Query()
             .Where(x => x.UsuarioEntregaPedidoId == userId.Value)
             .Where(x => x.MetodoEntrega == MetodoEntregaDelivery || x.MetodoEntrega == MetodoEntregaTransportadora)
+            .Where(x => !_context.RutasDeliveryDetalle.Any(detalle => detalle.VentaId == x.Id))
             .OrderBy(x => x.FechaTomaDelivery ?? x.FechaEntrega ?? x.FechaCreacion)
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
         return Ok(pedidos.Select(ToDto));
+    }
+
+    [HttpGet("mis-rutas")]
+    public async Task<ActionResult<IEnumerable<DeliveryRutaDto>>> GetMisRutas(
+        [FromQuery] DateTime? fechaDesde,
+        [FromQuery] DateTime? fechaHasta,
+        CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(new { message = "No se pudo identificar el usuario logueado." });
+        }
+
+        var desde = fechaDesde?.Date;
+        var hastaExclusivo = fechaHasta?.Date.AddDays(1);
+        var query = _context.RutasDelivery
+            .AsNoTracking()
+            .Include(x => x.UsuarioDelivery).ThenInclude(x => x!.Persona)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.Departamento)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.Ciudad)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Departamento)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.EstadoVenta)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.UsuarioEntregaPedido)!.ThenInclude(x => x!.Persona)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.Producto)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.TipoMaquina)
+            .Where(x => x.UsuarioDeliveryId == userId.Value);
+
+        if (desde.HasValue)
+        {
+            query = query.Where(x => x.FechaGeneracion >= desde.Value);
+        }
+
+        if (hastaExclusivo.HasValue)
+        {
+            query = query.Where(x => x.FechaGeneracion < hastaExclusivo.Value);
+        }
+
+        var rutas = await query
+            .OrderByDescending(x => x.FechaGeneracion)
+            .ThenByDescending(x => x.Id)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        return Ok(rutas.Select(ToRutaDto));
     }
 
     [HttpGet("entregas")]
@@ -187,6 +236,115 @@ public class DeliveryController : ControllerBase
             Convert.ToBase64String(bytes)));
     }
 
+    [HttpPost("rutas/generar")]
+    public async Task<ActionResult<DeliveryRutaDto>> GenerarRuta(
+        [FromQuery] DateTime? fechaDesde,
+        [FromQuery] DateTime? fechaHasta,
+        [FromQuery] string? cliente,
+        CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(new { message = "No se pudo identificar el usuario logueado." });
+        }
+
+        var pedidosQuery = _context.VentasImpresionCab
+            .Include(x => x.EstadoVenta)
+            .Include(x => x.Cliente)
+            .Where(x => x.UsuarioEntregaPedidoId == userId.Value)
+            .Where(x => x.MetodoEntrega == MetodoEntregaDelivery || x.MetodoEntrega == MetodoEntregaTransportadora)
+            .Where(x => !_context.RutasDeliveryDetalle.Any(detalle => detalle.VentaId == x.Id))
+            .AsQueryable();
+
+        var desde = fechaDesde?.Date;
+        var hastaExclusivo = fechaHasta?.Date.AddDays(1);
+        if (desde.HasValue)
+        {
+            pedidosQuery = pedidosQuery.Where(x => (x.FechaEntrega ?? x.FechaCreacion) >= desde.Value);
+        }
+
+        if (hastaExclusivo.HasValue)
+        {
+            pedidosQuery = pedidosQuery.Where(x => (x.FechaEntrega ?? x.FechaCreacion) < hastaExclusivo.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(cliente))
+        {
+            pedidosQuery = pedidosQuery.Where(x => x.Cliente != null && x.Cliente.Nombre == cliente);
+        }
+
+        var pedidos = await pedidosQuery
+            .OrderBy(x => x.FechaTomaDelivery ?? x.FechaEntrega ?? x.FechaCreacion)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (pedidos.Count == 0)
+        {
+            return BadRequest(new { message = "No hay pedidos tomados sin lote para generar una ruta." });
+        }
+
+        var now = DateTime.Now;
+        var numeroLote = await BuildNumeroLoteAsync(now, cancellationToken);
+        var ruta = new RutaDelivery
+        {
+            NumeroLote = numeroLote,
+            UsuarioDeliveryId = userId.Value,
+            FechaGeneracion = now,
+            Estado = "Generado",
+            Detalles = pedidos.Select(pedido => new RutaDeliveryDetalle
+            {
+                VentaId = pedido.Id,
+                FechaAgregado = now
+            }).ToList()
+        };
+
+        _context.RutasDelivery.Add(ruta);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var created = await QueryRutaById(ruta.Id)
+            .FirstAsync(cancellationToken);
+
+        return Ok(ToRutaDto(created));
+    }
+
+    [HttpGet("rutas/{id:int}/pdf")]
+    public async Task<ActionResult<ExcelFileDto>> DescargarRutaLotePdf(int id, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(new { message = "No se pudo identificar el usuario logueado." });
+        }
+
+        var ruta = await QueryRutaById(id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (ruta is null)
+        {
+            return NotFound(new { message = "No se encontro el lote de delivery." });
+        }
+
+        if (ruta.UsuarioDeliveryId != userId.Value)
+        {
+            return Forbid();
+        }
+
+        var pedidos = ruta.Detalles
+            .Select(x => x.Venta)
+            .Where(x => x is not null)
+            .Select(x => ToDto(x!))
+            .ToList();
+        var deliveryName = ruta.UsuarioDelivery is null ? $"Usuario {ruta.UsuarioDeliveryId}" : NombreUsuario(ruta.UsuarioDelivery);
+        var label = $"Lote {ruta.NumeroLote} - {ruta.FechaGeneracion:dd/MM/yyyy HH:mm}";
+        var bytes = DeliveryRoutePdfBuilder.Build(deliveryName, pedidos, label);
+
+        return Ok(new ExcelFileDto(
+            $"ruta-{ruta.NumeroLote}.pdf",
+            "application/pdf",
+            Convert.ToBase64String(bytes)));
+    }
+
     [HttpGet("{id:int}/transportadora-etiqueta/pdf")]
     public async Task<ActionResult<ExcelFileDto>> DescargarEtiquetaTransportadora(int id, CancellationToken cancellationToken)
     {
@@ -270,6 +428,56 @@ public class DeliveryController : ControllerBase
         return Ok(ToDto(updated));
     }
 
+    [HttpPost("{id:int}/quitar")]
+    public async Task<IActionResult> QuitarPedidoTomado(int id, CancellationToken cancellationToken)
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized(new { message = "No se pudo identificar el usuario logueado." });
+        }
+
+        var pedido = await QueryForUpdate()
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (pedido is null)
+        {
+            return NotFound(new { message = "No se encontro el pedido." });
+        }
+
+        if (pedido.UsuarioEntregaPedidoId != userId.Value)
+        {
+            return BadRequest(new { message = "Solo el usuario que tomo el pedido puede quitarlo." });
+        }
+
+        var tieneLote = await _context.RutasDeliveryDetalle
+            .AnyAsync(x => x.VentaId == id, cancellationToken);
+
+        if (tieneLote)
+        {
+            return BadRequest(new { message = "No se puede quitar un pedido que ya pertenece a un lote." });
+        }
+
+        var estadoPendienteEnvio = await _context.EstadosVenta
+            .Where(x => x.NumeroFlujo == FlujoEnvio)
+            .OrderBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (estadoPendienteEnvio is null)
+        {
+            return BadRequest(new { message = "No existe un estado pendiente de envio configurado." });
+        }
+
+        pedido.EstadoVentaId = estadoPendienteEnvio.Id;
+        pedido.UsuarioEntregaPedidoId = null;
+        pedido.FechaTomaDelivery = null;
+        pedido.UsuModificacion = userId.Value;
+        pedido.FechaModificacion = DateTime.Now;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
+    }
+
     [HttpPost("{id:int}/marcar-enviado")]
     public async Task<ActionResult<DeliveryPedidoDto>> MarcarEnviado(int id, CancellationToken cancellationToken)
     {
@@ -318,6 +526,61 @@ public class DeliveryController : ControllerBase
         await _context.SaveChangesAsync(cancellationToken);
     }
 
+    private async Task AddPedidoToOpenRouteAsync(int pedidoId, int userId, CancellationToken cancellationToken)
+    {
+        var exists = await _context.RutasDeliveryDetalle
+            .AnyAsync(x => x.VentaId == pedidoId, cancellationToken);
+
+        if (exists)
+        {
+            return;
+        }
+
+        var now = DateTime.Now;
+        var ruta = await _context.RutasDelivery
+            .Where(x => x.UsuarioDeliveryId == userId && x.Estado == EstadoRutaAbierto)
+            .OrderByDescending(x => x.FechaGeneracion)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (ruta is null)
+        {
+            ruta = new RutaDelivery
+            {
+                NumeroLote = await BuildNumeroLoteAsync(now, cancellationToken),
+                UsuarioDeliveryId = userId,
+                FechaGeneracion = now,
+                Estado = EstadoRutaAbierto
+            };
+
+            _context.RutasDelivery.Add(ruta);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        _context.RutasDeliveryDetalle.Add(new RutaDeliveryDetalle
+        {
+            RutaDeliveryId = ruta.Id,
+            VentaId = pedidoId,
+            FechaAgregado = now
+        });
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task CloseRouteAsync(int rutaId, int userId, CancellationToken cancellationToken)
+    {
+        var ruta = await _context.RutasDelivery
+            .FirstOrDefaultAsync(x => x.Id == rutaId && x.UsuarioDeliveryId == userId, cancellationToken);
+
+        if (ruta is null || ruta.Estado == EstadoRutaCerrado)
+        {
+            return;
+        }
+
+        ruta.Estado = EstadoRutaCerrado;
+        ruta.FechaModificacion = DateTime.Now;
+        ruta.UsuModificacion = userId;
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
     private static IQueryable<VentaImpresionCab> ApplyDeliveryDateRange(IQueryable<VentaImpresionCab> query, DateTime? fechaDesde, DateTime? fechaHasta)
     {
         var desde = fechaDesde?.Date;
@@ -360,6 +623,31 @@ public class DeliveryController : ControllerBase
     {
         return _context.VentasImpresionCab
             .Include(x => x.EstadoVenta);
+    }
+
+    private IQueryable<RutaDelivery> QueryRutaById(int id)
+    {
+        return _context.RutasDelivery
+            .AsNoTracking()
+            .Include(x => x.UsuarioDelivery).ThenInclude(x => x!.Persona)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.Departamento)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.Ciudad)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Departamento)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.EstadoVenta)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.UsuarioEntregaPedido)!.ThenInclude(x => x!.Persona)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.Producto)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.TipoMaquina)
+            .Where(x => x.Id == id);
+    }
+
+    private async Task<string> BuildNumeroLoteAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var prefix = now.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        var count = await _context.RutasDelivery
+            .CountAsync(x => x.NumeroLote.StartsWith(prefix), cancellationToken);
+
+        return $"{prefix}-{count + 1:000}";
     }
 
     private async Task<List<VentaImpresionCab>> PendingByMethodAsync(string method, CancellationToken cancellationToken)
@@ -419,12 +707,35 @@ public class DeliveryController : ControllerBase
             pedido.EstadoVenta?.Nombre,
             $"Usuario {pedido.VendedorId}",
             pedido.TotalVenta,
-            pedido.MetodoEntrega,
+            pedido.MetodoEntrega ?? MetodoEntregaDelivery,
             MetodoEntregaLabel(pedido.MetodoEntrega),
             pedido.UsuarioEntregaPedidoId,
             pedido.UsuarioEntregaPedido is null ? null : NombreUsuario(pedido.UsuarioEntregaPedido),
             pedido.FechaTomaDelivery,
             Productos(pedido));
+    }
+
+    private static DeliveryRutaDto ToRutaDto(RutaDelivery ruta)
+    {
+        var pedidos = ruta.Detalles
+            .Select(x => x.Venta)
+            .Where(x => x is not null)
+            .Select(x => ToDto(x!))
+            .OrderBy(x => x.Ciudad)
+            .ThenBy(x => x.Id)
+            .ToList();
+
+        return new DeliveryRutaDto(
+            ruta.Id,
+            ruta.NumeroLote,
+            ruta.UsuarioDeliveryId,
+            ruta.UsuarioDelivery is null ? $"Usuario {ruta.UsuarioDeliveryId}" : NombreUsuario(ruta.UsuarioDelivery),
+            ruta.FechaGeneracion,
+            ruta.Estado,
+            pedidos.Count,
+            string.Join(", ", pedidos.Select(x => x.Ciudad).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x)),
+            string.Join(", ", pedidos.Select(x => x.MetodoEntrega).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x)),
+            pedidos);
     }
 
     private static string NombreUsuario(Usuario usuario)
@@ -591,9 +902,19 @@ public class DeliveryController : ControllerBase
                 return pages;
             }
 
-            foreach (var methodGroup in pedidos
-                .GroupBy(x => string.IsNullOrWhiteSpace(x.MetodoEntrega) ? "Sin metodo" : x.MetodoEntrega)
-                .OrderBy(x => x.Key))
+            var transportadoraPedidos = pedidos
+                .Where(IsTransportadora)
+                .OrderBy(x => x.Ciudad)
+                .ThenBy(x => x.Id)
+                .ToList();
+
+            var deliveryPedidos = pedidos
+                .Where(x => !IsTransportadora(x))
+                .OrderBy(x => x.Ciudad)
+                .ThenBy(x => x.Id)
+                .ToList();
+
+            if (transportadoraPedidos.Count > 0)
             {
                 if (y < 155)
                 {
@@ -602,56 +923,77 @@ public class DeliveryController : ControllerBase
                     y = 710;
                 }
 
-                Text(builder, MarginX, y, $"TIPO DE ENVIO: {methodGroup.Key.ToUpperInvariant()}", 12, bold: true, color: (TealR, TealG, TealB));
-                Text(builder, MarginX + 320, y, $"{methodGroup.Count()} envios", 9);
-                y -= 18;
+                Text(builder, MarginX, y, "TRANSPORTADORA", 11, bold: true, color: (TealR, TealG, TealB));
+                Text(builder, MarginX + 145, y, $"{transportadoraPedidos.Count} envios", 9);
+                y -= 14;
+                DrawTableHeader(builder, y);
+                y -= 15;
 
-                foreach (var cityGroup in methodGroup
-                    .GroupBy(x => string.IsNullOrWhiteSpace(x.Ciudad) ? "Sin ciudad" : x.Ciudad)
-                    .OrderBy(x => x.Key))
+                foreach (var pedido in transportadoraPedidos)
                 {
-                    if (y < 130)
+                    if (y < 55)
                     {
                         pages.Add(builder.ToString());
                         builder = NewPage(deliveryName, dateRange);
                         y = 710;
-                        Text(builder, MarginX, y, $"TIPO DE ENVIO: {methodGroup.Key.ToUpperInvariant()} (CONT.)", 12, bold: true, color: (TealR, TealG, TealB));
-                        y -= 18;
-                    }
-
-                    Text(builder, MarginX, y, $"CIUDAD: {cityGroup.Key.ToUpperInvariant()}", 11, bold: true, color: (0.05, 0.23, 0.39));
-                    Text(builder, MarginX + 190, y, $"{cityGroup.Count()} envios", 9);
-                    y -= 15;
-                    DrawTableHeader(builder, y);
-                    y -= 15;
-
-                    foreach (var pedido in cityGroup)
-                    {
-                        if (y < 55)
-                        {
-                            pages.Add(builder.ToString());
-                            builder = NewPage(deliveryName, dateRange);
-                            y = 710;
-                            Text(builder, MarginX, y, $"TIPO DE ENVIO: {methodGroup.Key.ToUpperInvariant()} (CONT.)", 12, bold: true, color: (TealR, TealG, TealB));
-                            y -= 18;
-                            Text(builder, MarginX, y, $"CIUDAD: {cityGroup.Key.ToUpperInvariant()} (CONT.)", 11, bold: true, color: (0.05, 0.23, 0.39));
-                            y -= 15;
-                            DrawTableHeader(builder, y);
-                            y -= 15;
-                        }
-
-                        DrawTableRow(builder, y, pedido);
+                        Text(builder, MarginX, y, "TRANSPORTADORA (CONT.)", 11, bold: true, color: (TealR, TealG, TealB));
+                        y -= 14;
+                        DrawTableHeader(builder, y);
                         y -= 15;
                     }
 
-                    y -= 12;
+                    DrawTableRow(builder, y, pedido);
+                    y -= 15;
                 }
 
-                y -= 2;
+                y -= 10;
+            }
+
+            foreach (var cityGroup in deliveryPedidos
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.Ciudad) ? "Sin ciudad" : x.Ciudad)
+                .OrderBy(x => x.Key))
+            {
+                if (y < 130)
+                {
+                    pages.Add(builder.ToString());
+                    builder = NewPage(deliveryName, dateRange);
+                    y = 710;
+                }
+
+                Text(builder, MarginX, y, $"CIUDAD: {cityGroup.Key.ToUpperInvariant()}", 11, bold: true, color: (0.05, 0.23, 0.39));
+                Text(builder, MarginX + 190, y, $"{cityGroup.Count()} envios", 9);
+                y -= 14;
+                DrawTableHeader(builder, y);
+                y -= 15;
+
+                foreach (var pedido in cityGroup)
+                {
+                    if (y < 55)
+                    {
+                        pages.Add(builder.ToString());
+                        builder = NewPage(deliveryName, dateRange);
+                        y = 710;
+                        Text(builder, MarginX, y, $"CIUDAD: {cityGroup.Key.ToUpperInvariant()} (CONT.)", 11, bold: true, color: (0.05, 0.23, 0.39));
+                        y -= 14;
+                        DrawTableHeader(builder, y);
+                        y -= 15;
+                    }
+
+                    DrawTableRow(builder, y, pedido);
+                    y -= 15;
+                }
+
+                y -= 10;
             }
 
             pages.Add(builder.ToString());
             return pages;
+        }
+
+        private static bool IsTransportadora(DeliveryPedidoDto pedido)
+        {
+            return string.Equals(pedido.MetodoEntregaId, MetodoEntregaTransportadora, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pedido.MetodoEntrega, "Transportadora", StringComparison.OrdinalIgnoreCase);
         }
 
         private static StringBuilder NewPage(string deliveryName, string dateRange)

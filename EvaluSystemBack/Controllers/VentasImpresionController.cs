@@ -202,6 +202,46 @@ public class VentasImpresionController : ControllerBase
             .Take(6)
             .ToList();
 
+        var pedidosMensualesPorGrupo = ventasDelMes
+            .SelectMany(x => x.Detalles.Select(d => new
+            {
+                Maquina = MachineGroupName(d.TipoMaquina?.Nombre),
+                Monto = DetailAmount(d)
+            }))
+            .GroupBy(x => x.Maquina)
+            .ToDictionary(x => x.Key, x => x.Sum(item => item.Monto), StringComparer.OrdinalIgnoreCase);
+        var pedidosMensualesPorMaquina = new[] { "UV DTF", "DTF TEXTIL" }
+            .Select(nombre => new DashboardMachineDto(nombre, pedidosMensualesPorGrupo.GetValueOrDefault(nombre, 0)))
+            .ToList();
+        var totalPedidosMensuales = pedidosMensualesPorMaquina.Sum(x => x.Cantidad);
+
+        var metasMensuales = await GetMonthlyMachineGoalsAsync();
+        var metaMensualTotal = metasMensuales.Values.Sum();
+        var metasMensualesPorMaquina = new[] { "UV DTF", "DTF TEXTIL" }
+            .Select(nombre =>
+            {
+                var cantidad = pedidosMensualesPorMaquina
+                    .FirstOrDefault(x => string.Equals(x.Nombre, nombre, StringComparison.OrdinalIgnoreCase))
+                    ?.Cantidad ?? 0;
+                var meta = metasMensuales.GetValueOrDefault(nombre, 0);
+                var faltante = Math.Max(meta - cantidad, 0);
+                var porcentaje = meta > 0 ? Math.Min((cantidad / meta) * 100, 100) : cantidad > 0 ? 100 : 0;
+
+                return new DashboardGoalDto(nombre, cantidad, meta, faltante, porcentaje, meta > 0 && cantidad >= meta);
+            })
+            .ToList();
+        var faltanteTotal = Math.Max(metaMensualTotal - totalPedidosMensuales, 0);
+        var porcentajeTotal = metaMensualTotal > 0
+            ? Math.Min((totalPedidosMensuales / metaMensualTotal) * 100, 100)
+            : totalPedidosMensuales > 0 ? 100 : 0;
+        var metaMensualTotalDto = new DashboardGoalDto(
+            "TOTAL",
+            totalPedidosMensuales,
+            metaMensualTotal,
+            faltanteTotal,
+            porcentajeTotal,
+            metaMensualTotal > 0 && totalPedidosMensuales >= metaMensualTotal);
+
         var pendientesPago = ventas
             .Select(x => new
             {
@@ -230,7 +270,11 @@ public class VentasImpresionController : ControllerBase
             pedidosImpresos,
             pedidosPendientesImpresion,
             pedidosEntregadosHoy,
+            totalPedidosMensuales,
+            metaMensualTotalDto,
             pedidosPorMaquina,
+            pedidosMensualesPorMaquina,
+            metasMensualesPorMaquina,
             pendientesPago,
             mejoresVendedores));
     }
@@ -675,6 +719,88 @@ public class VentasImpresionController : ControllerBase
     {
         var total = details.Sum(detail => detail.Cantidad);
         return total == 0 ? "0 m" : $"{total:N2} m";
+    }
+
+    private static decimal DetailAmount(Models.VentaImpresionDet detail)
+    {
+        return detail.PrecioTotal ?? (detail.Cantidad * detail.PrecioUnitario) + (detail.PrecioExtra ?? 0);
+    }
+
+    private async Task<Dictionary<string, decimal>> GetMonthlyMachineGoalsAsync()
+    {
+        var configurations = await _context.Configuraciones
+            .AsNoTracking()
+            .Where(x => x.Nombre.ToUpper().Contains("META") && x.Nombre.ToUpper().Contains("MENSUAL"))
+            .ToListAsync();
+        var machines = await _context.TiposMaquina
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre);
+        var goals = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["UV DTF"] = 0,
+            ["DTF TEXTIL"] = 0
+        };
+
+        foreach (var configuration in configurations)
+        {
+            if (!decimal.TryParse(configuration.Valor, NumberStyles.Any, CultureInfo.InvariantCulture, out var goal) || goal <= 0)
+            {
+                continue;
+            }
+
+            var machineName = machines.GetValueOrDefault(configuration.NroConfiguracion)
+                ?? configuration.Nombre
+                    .Replace("META_MENSUAL", string.Empty, StringComparison.OrdinalIgnoreCase)
+                    .Replace("Meta mensual", string.Empty, StringComparison.OrdinalIgnoreCase)
+                    .Replace("_", " ")
+                    .Trim();
+            var groupName = MachineGroupName(machineName);
+
+            if (goals.ContainsKey(groupName))
+            {
+                goals[groupName] += goal;
+            }
+        }
+
+        return goals;
+    }
+
+    private static string MachineGroupName(string? machineName)
+    {
+        if (string.IsNullOrWhiteSpace(machineName))
+        {
+            return "Sin maquina";
+        }
+
+        var normalized = RemoveDiacritics(machineName);
+        if (normalized.Contains("uv", StringComparison.OrdinalIgnoreCase) &&
+            normalized.Contains("dtf", StringComparison.OrdinalIgnoreCase))
+        {
+            return "UV DTF";
+        }
+
+        if (normalized.Contains("dtf", StringComparison.OrdinalIgnoreCase))
+        {
+            return "DTF TEXTIL";
+        }
+
+        return machineName;
+    }
+
+    private static string RemoveDiacritics(string value)
+    {
+        var normalized = value.Normalize(NormalizationForm.FormD);
+        var builder = new StringBuilder(normalized.Length);
+
+        foreach (var character in normalized)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                builder.Append(char.ToLowerInvariant(character));
+            }
+        }
+
+        return builder.ToString();
     }
 
     private sealed record FilteredVentasQuery(IQueryable<Models.VentaImpresionCab> Query, bool Forbidden);

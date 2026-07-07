@@ -226,6 +226,18 @@ public record DeliveryResumenDto(
     string Ciudades,
     string MetodosEnvio);
 
+public record DeliveryRutaDto(
+    int Id,
+    string NumeroLote,
+    int UsuarioDeliveryId,
+    string UsuarioDelivery,
+    DateTime FechaGeneracion,
+    string Estado,
+    int CantidadPedidos,
+    string Ciudades,
+    string MetodosEnvio,
+    IEnumerable<DeliveryPedidoDto> Pedidos);
+
 public record VentaImpresionDetDto(
     int Id,
     int CabId,

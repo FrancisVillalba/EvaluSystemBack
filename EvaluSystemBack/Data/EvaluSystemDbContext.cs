@@ -28,6 +28,8 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<PerfilFormularioPermiso> PerfilFormularioPermisos => Set<PerfilFormularioPermiso>();
     public DbSet<Persona> Personas => Set<Persona>();
     public DbSet<Producto> Productos => Set<Producto>();
+    public DbSet<RutaDelivery> RutasDelivery => Set<RutaDelivery>();
+    public DbSet<RutaDeliveryDetalle> RutasDeliveryDetalle => Set<RutaDeliveryDetalle>();
     public DbSet<TipoCliente> TiposCliente => Set<TipoCliente>();
     public DbSet<TipoDocumento> TiposDocumento => Set<TipoDocumento>();
     public DbSet<TipoMaquina> TiposMaquina => Set<TipoMaquina>();
@@ -278,6 +280,37 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
             entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
             entity.HasOne(e => e.TipoMaquina).WithMany(e => e.Productos).HasForeignKey(e => e.MaquinaId);
+        });
+
+        modelBuilder.Entity<RutaDelivery>(entity =>
+        {
+            entity.ToTable("Ruta_delivery");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.NumeroLote).IsUnique();
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.NumeroLote).HasColumnName("numero_lote").HasMaxLength(30).IsRequired();
+            entity.Property(e => e.UsuarioDeliveryId).HasColumnName("usuario_delivery_id");
+            entity.Property(e => e.FechaGeneracion).HasColumnName("fecha_generacion").HasColumnType("datetime");
+            entity.Property(e => e.Estado).HasColumnName("estado").HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Observacion).HasColumnName("observacion").HasMaxLength(500);
+            entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
+            entity.HasOne(e => e.UsuarioDelivery).WithMany().HasForeignKey(e => e.UsuarioDeliveryId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<RutaDeliveryDetalle>(entity =>
+        {
+            entity.ToTable("Ruta_delivery_detalle");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.VentaId).IsUnique();
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.RutaDeliveryId).HasColumnName("ruta_delivery_id");
+            entity.Property(e => e.VentaId).HasColumnName("venta_id");
+            entity.Property(e => e.FechaAgregado).HasColumnName("fecha_agregado").HasColumnType("datetime");
+            entity.HasOne(e => e.RutaDelivery).WithMany(e => e.Detalles).HasForeignKey(e => e.RutaDeliveryId);
+            entity.HasOne(e => e.Venta).WithMany().HasForeignKey(e => e.VentaId).OnDelete(DeleteBehavior.NoAction);
         });
 
         ConfigureSimpleCatalog<TipoCliente>(modelBuilder, "Tipo_cliente");
