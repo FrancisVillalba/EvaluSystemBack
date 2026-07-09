@@ -104,6 +104,7 @@ public class VentasImpresionController : ControllerBase
     {
         var canViewAll = await CurrentUserCanViewAllOrdersAsync();
         var currentUserId = CurrentUserId();
+        var canViewUserSales = canViewAll || (currentUserId.HasValue && await UserHasProfileAsync(currentUserId.Value, "Ventas"));
 
         var clientes = await _context.Clientes
             .Include(x => x.DatosEnvio)
@@ -117,6 +118,9 @@ public class VentasImpresionController : ControllerBase
             .AsNoTracking()
             .Where(x => x.Estado != false)
             .ToListAsync();
+        var vendedores = canViewAll
+            ? usuarios
+            : usuarios.Where(x => currentUserId.HasValue && x.Id == currentUserId.Value).ToList();
         var estadosPago = await _context.EstadosPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
         var estadosVenta = await _context.EstadosVenta
             .AsNoTracking()
@@ -134,13 +138,123 @@ public class VentasImpresionController : ControllerBase
         return Ok(new VentaImpresionOptionsDto(
             clientes.Select(x => x.ToDto()),
             formasPago.Select(x => x.ToDto()),
-            usuarios.Select(x => x.ToDto()),
+            vendedores.Select(x => x.ToDto()),
             estadosPago.Select(x => x.ToDto()),
             estadosVenta.Select(x => x.ToDto()),
             productos.Select(x => x.ToDto()),
             maquinas.Select(x => x.ToDto()),
             currentUserId,
-            canViewAll));
+            canViewAll,
+            canViewUserSales));
+    }
+
+    [HttpGet("mis-ventas")]
+    public async Task<ActionResult<VentaUsuarioResumenDto>> GetMySales(
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] int? clienteId = null,
+        [FromQuery] string? estadoVentaId = null,
+        [FromQuery] int? vendedorId = null)
+    {
+        var currentUserId = CurrentUserId();
+        if (!currentUserId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        var canViewAll = await CurrentUserCanViewAllOrdersAsync();
+        if (!canViewAll && !await UserHasProfileAsync(currentUserId.Value, "Ventas"))
+        {
+            var today = DateTime.Today;
+            return Ok(new VentaUsuarioResumenDto(
+                dateFrom?.Date ?? new DateTime(today.Year, today.Month, 1),
+                dateTo?.Date ?? today,
+                false,
+                new VentaUsuarioTotalesDto(0, 0, 0, 0),
+                []));
+        }
+
+        var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
+        var to = (dateTo ?? DateTime.Today).Date;
+        var toExclusive = to.AddDays(1);
+        var query = Query()
+            .AsNoTracking()
+            .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
+            .AsQueryable();
+
+        if (canViewAll)
+        {
+            if (vendedorId.HasValue)
+            {
+                query = query.Where(x => x.VendedorId == vendedorId.Value);
+            }
+        }
+        else
+        {
+            query = query.Where(x => x.VendedorId == currentUserId.Value);
+        }
+
+        if (clienteId.HasValue)
+        {
+            query = query.Where(x => x.ClienteId == clienteId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(estadoVentaId))
+        {
+            query = query.Where(x => x.EstadoVentaId == estadoVentaId);
+        }
+
+        var ventas = await query
+            .OrderByDescending(x => x.FechaCreacion)
+            .ToListAsync();
+
+        ventas = ventas
+            .Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre))
+            .ToList();
+
+        var perfilVentasId = await ProfileIdAsync("Ventas");
+        var perfilVentaExternaId = await ProfileIdAsync("Venta Externa");
+        var comisiones = await _context.ProductoComisiones
+            .AsNoTracking()
+            .Where(x => x.Estado)
+            .Where(x => x.FechaHasta == null || x.FechaHasta >= from)
+            .Where(x => x.FechaDesde == null || x.FechaDesde < toExclusive)
+            .ToListAsync();
+        var vendedorIds = ventas.Select(x => x.VendedorId).Distinct().ToHashSet();
+        var perfilesPorUsuario = await _context.UsuarioPerfiles
+            .Include(x => x.Perfil)
+            .AsNoTracking()
+            .Where(x => x.Estado && x.Perfil != null && x.Perfil.Estado && vendedorIds.Contains(x.UsuarioId))
+            .GroupBy(x => x.UsuarioId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(item => item.PerfilId).ToList());
+
+        var items = ventas.Select(venta =>
+        {
+            var totalMetros = venta.Detalles.Sum(detalle => detalle.Cantidad);
+            var perfilComisionId = canViewAll
+                ? SellerCommissionProfileId(venta.VendedorId, perfilesPorUsuario, perfilVentasId, perfilVentaExternaId)
+                : perfilVentasId;
+            var totalComision = venta.Detalles.Sum(detalle =>
+                detalle.Cantidad * ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
+                (detalle.PrecioExtra ?? 0));
+
+            return new VentaUsuarioItemDto(
+                venta.Id,
+                venta.FechaCreacion,
+                venta.Cliente?.Nombre ?? string.Empty,
+                venta.EstadoVenta?.Nombre ?? venta.EstadoVentaId,
+                venta.TotalVenta,
+                totalMetros,
+                totalComision);
+        }).ToList();
+
+        var totales = new VentaUsuarioTotalesDto(
+            items.Count,
+            items.Sum(x => x.TotalVenta),
+            items.Sum(x => x.TotalMetros),
+            items.Sum(x => x.TotalComision));
+
+        return Ok(new VentaUsuarioResumenDto(from, to, true, totales, items));
     }
 
     [HttpGet("{id:int}")]
@@ -289,6 +403,13 @@ public class VentasImpresionController : ControllerBase
     [HttpPost("completa")]
     public async Task<ActionResult<VentaImpresionCabDto>> CreateCompleta(VentaImpresionCompletaRequest request)
     {
+        var vendedorValidation = await ValidateSellerForCurrentUserAsync(request.VendedorId);
+        if (vendedorValidation is not null)
+        {
+            return vendedorValidation;
+        }
+
+        request = await NormalizeSellerAsync(request);
         var venta = await _ventaImpresionService.CrearVentaCompletaAsync(request);
         return CreatedAtAction(nameof(GetById), new { id = venta.Id }, venta);
     }
@@ -296,6 +417,13 @@ public class VentasImpresionController : ControllerBase
     [HttpPut("completa/{id:int}")]
     public async Task<ActionResult<VentaImpresionCabDto>> UpdateCompleta(int id, VentaImpresionCompletaUpdateRequest request)
     {
+        var vendedorValidation = await ValidateSellerForCurrentUserAsync(request.VendedorId);
+        if (vendedorValidation is not null)
+        {
+            return vendedorValidation;
+        }
+
+        request = await NormalizeSellerAsync(request);
         var venta = await _ventaImpresionService.ActualizarVentaCompletaAsync(id, request);
         return venta is null ? NotFound() : Ok(venta);
     }
@@ -354,6 +482,13 @@ public class VentasImpresionController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<ActionResult<VentaImpresionCabDto>> Update(int id, VentaImpresionCabRequest request)
     {
+        var vendedorValidation = await ValidateSellerForCurrentUserAsync(request.VendedorId);
+        if (vendedorValidation is not null)
+        {
+            return vendedorValidation;
+        }
+
+        request = await NormalizeSellerAsync(request);
         var venta = await _ventaImpresionService.ActualizarCabeceraAsync(id, request);
         return venta is null ? NotFound() : Ok(venta);
     }
@@ -478,6 +613,124 @@ public class VentasImpresionController : ControllerBase
         }
 
         return await _permisoService.UsuarioTienePermisoAsync(userId.Value, "Administracion", "ver");
+    }
+
+    private async Task<bool> UserHasProfileAsync(int usuarioId, string profileName)
+    {
+        var hasProfile = await _context.UsuarioPerfiles
+            .Include(x => x.Perfil)
+            .AnyAsync(x => x.UsuarioId == usuarioId &&
+                x.Estado &&
+                x.Perfil != null &&
+                x.Perfil.Estado &&
+                x.Perfil.Nombre == profileName);
+
+        if (hasProfile)
+        {
+            return true;
+        }
+
+        return await _context.Usuarios
+            .Include(x => x.Persona)
+            .ThenInclude(x => x!.Perfil)
+            .AnyAsync(x => x.Id == usuarioId &&
+                x.Persona != null &&
+                x.Persona.Perfil != null &&
+                x.Persona.Perfil.Estado &&
+                x.Persona.Perfil.Nombre == profileName);
+    }
+
+    private async Task<int> ProfileIdAsync(string profileName)
+    {
+        return await _context.Perfiles
+            .AsNoTracking()
+            .Where(x => x.Estado && x.Nombre == profileName)
+            .Select(x => x.Id)
+            .FirstOrDefaultAsync();
+    }
+
+    private static decimal ResolveCommission(
+        int productoId,
+        int perfilId,
+        DateTime fecha,
+        IReadOnlyCollection<Models.ProductoComision> comisiones)
+    {
+        if (perfilId <= 0)
+        {
+            return 0;
+        }
+
+        var fechaVenta = fecha.Date;
+        return comisiones
+            .Where(x => x.ProductoId == productoId && x.PerfilId == perfilId)
+            .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
+            .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
+            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
+            .Select(x => x.MontoPorMetro)
+            .FirstOrDefault();
+    }
+
+    private static int SellerCommissionProfileId(
+        int vendedorId,
+        IReadOnlyDictionary<int, List<int>> perfilesPorUsuario,
+        int perfilVentasId,
+        int perfilVentaExternaId)
+    {
+        if (!perfilesPorUsuario.TryGetValue(vendedorId, out var perfilIds) || perfilIds.Count == 0)
+        {
+            return 0;
+        }
+
+        if (perfilVentaExternaId > 0 && perfilIds.Contains(perfilVentaExternaId))
+        {
+            return perfilVentaExternaId;
+        }
+
+        if (perfilVentasId > 0 && perfilIds.Contains(perfilVentasId))
+        {
+            return perfilVentasId;
+        }
+
+        return perfilIds[0];
+    }
+
+    private async Task<ActionResult?> ValidateSellerForCurrentUserAsync(int vendedorId)
+    {
+        if (await CurrentUserCanViewAllOrdersAsync())
+        {
+            return null;
+        }
+
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return Unauthorized();
+        }
+
+        return vendedorId == userId.Value
+            ? null
+            : Forbid();
+    }
+
+    private async Task<VentaImpresionCompletaRequest> NormalizeSellerAsync(VentaImpresionCompletaRequest request)
+    {
+        return await CurrentUserCanViewAllOrdersAsync() || !CurrentUserId().HasValue
+            ? request
+            : request with { VendedorId = CurrentUserId()!.Value };
+    }
+
+    private async Task<VentaImpresionCompletaUpdateRequest> NormalizeSellerAsync(VentaImpresionCompletaUpdateRequest request)
+    {
+        return await CurrentUserCanViewAllOrdersAsync() || !CurrentUserId().HasValue
+            ? request
+            : request with { VendedorId = CurrentUserId()!.Value };
+    }
+
+    private async Task<VentaImpresionCabRequest> NormalizeSellerAsync(VentaImpresionCabRequest request)
+    {
+        return await CurrentUserCanViewAllOrdersAsync() || !CurrentUserId().HasValue
+            ? request
+            : request with { VendedorId = CurrentUserId()!.Value };
     }
 
     private static string NombrePersona(Models.Persona persona)

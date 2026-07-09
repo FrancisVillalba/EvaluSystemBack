@@ -174,7 +174,13 @@ public record GrupoVentaEquipoDto(
     DateTime FechaDesde,
     DateTime FechaHasta,
     IEnumerable<GrupoVentaResumenVendedorDto> Resumen,
-    IEnumerable<GrupoVentaVentaDto> Ventas);
+    IEnumerable<GrupoVentaVentaDto> Ventas,
+    IEnumerable<GrupoVentaFiltroVendedorDto> Vendedores,
+    bool PuedeFiltrarVendedores);
+
+public record GrupoVentaFiltroVendedorDto(
+    int VendedorId,
+    string Vendedor);
 
 public record GrupoVentaResumenVendedorDto(
     int VendedorId,
@@ -206,7 +212,30 @@ public record VentaImpresionOptionsDto(
     IEnumerable<ProductoDto> Productos,
     IEnumerable<TipoMaquinaDto> Maquinas,
     int? UsuarioActualId,
-    bool PuedeVerTodosPedidos);
+    bool PuedeVerTodosPedidos,
+    bool PuedeVerVentasUsuario);
+
+public record VentaUsuarioResumenDto(
+    DateTime FechaDesde,
+    DateTime FechaHasta,
+    bool PuedeVerVentasUsuario,
+    VentaUsuarioTotalesDto Totales,
+    IEnumerable<VentaUsuarioItemDto> Ventas);
+
+public record VentaUsuarioTotalesDto(
+    int CantidadPedidos,
+    decimal TotalVenta,
+    decimal TotalMetros,
+    decimal TotalComision);
+
+public record VentaUsuarioItemDto(
+    int PedidoId,
+    DateTime Fecha,
+    string Cliente,
+    string Estado,
+    decimal TotalVenta,
+    decimal TotalMetros,
+    decimal TotalComision);
 
 public record ExcelFileDto(string FileName, string ContentType, string Bytes);
 

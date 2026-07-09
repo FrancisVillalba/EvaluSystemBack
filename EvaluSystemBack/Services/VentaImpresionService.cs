@@ -721,16 +721,12 @@ public class VentaImpresionService : IVentaImpresionService
         var permitido = (flujoActual, flujoDestino) switch
         {
             (FlujoCarga, FlujoImpresion) => true,
-            (FlujoImpresion, FlujoCarga) => true,
-            (FlujoImpresion, FlujoEnvio) => true,
-            (FlujoEnvio, FlujoEnviado) => true,
-            (_, FlujoEliminado) when flujoActual <= FlujoEnvio => true,
             _ => false
         };
 
         if (!permitido)
         {
-            throw new InvalidOperationException("El cambio de estado solicitado no corresponde al flujo permitido.");
+            throw new InvalidOperationException("Desde pedidos solo se puede enviar una venta de Carga a Impresion. Use los modulos de Impresiones o Envio para los siguientes estados.");
         }
     }
 
