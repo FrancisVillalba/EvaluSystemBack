@@ -106,9 +106,28 @@ public record PersonaRequest(
     string? Documento,
     bool? Estado);
 
-public record ProductoDto(int Id, string Nombre, decimal PrecioBase, decimal? Comision, int? MaquinaId, string? Maquina, bool Estado);
+public record ProductoDto(int Id, string Nombre, decimal PrecioBase, int? MaquinaId, string? Maquina, bool Estado);
 
-public record ProductoRequest([Required] string Nombre, [Range(0, double.MaxValue)] decimal PrecioBase, [Range(0, double.MaxValue)] decimal? Comision, int? MaquinaId, bool Estado);
+public record ProductoRequest([Required] string Nombre, [Range(0, double.MaxValue)] decimal PrecioBase, int? MaquinaId, bool Estado);
+
+public record ProductoComisionDto(
+    int Id,
+    int ProductoId,
+    string? Producto,
+    int PerfilId,
+    string? Perfil,
+    decimal MontoPorMetro,
+    bool Estado,
+    DateTime? FechaDesde,
+    DateTime? FechaHasta);
+
+public record ProductoComisionRequest(
+    [Range(1, int.MaxValue)] int ProductoId,
+    [Range(1, int.MaxValue)] int PerfilId,
+    [Range(0, double.MaxValue)] decimal MontoPorMetro,
+    bool Estado,
+    DateTime? FechaDesde,
+    DateTime? FechaHasta);
 
 public record PerfilDto(int Id, string Nombre, string? Descripcion, bool Estado);
 
@@ -130,6 +149,51 @@ public record UsuarioDto(
     bool? Estado);
 
 public record UsuarioRequest([Required] string? NombreUsuario, string? Pass, int? PersonaId, IEnumerable<int>? PerfilIds, bool? Estado);
+
+public record GrupoVentaDto(
+    int Id,
+    string Nombre,
+    int TeamLeaderUsuarioId,
+    string? TeamLeader,
+    bool Estado,
+    IEnumerable<GrupoVentaVendedorDto> Vendedores);
+
+public record GrupoVentaVendedorDto(
+    int Id,
+    int VendedorUsuarioId,
+    string? Vendedor,
+    bool Estado);
+
+public record GrupoVentaRequest(
+    [Required] string Nombre,
+    [Range(1, int.MaxValue)] int TeamLeaderUsuarioId,
+    bool Estado,
+    IEnumerable<int>? VendedorUsuarioIds);
+
+public record GrupoVentaEquipoDto(
+    DateTime FechaDesde,
+    DateTime FechaHasta,
+    IEnumerable<GrupoVentaResumenVendedorDto> Resumen,
+    IEnumerable<GrupoVentaVentaDto> Ventas);
+
+public record GrupoVentaResumenVendedorDto(
+    int VendedorId,
+    string Vendedor,
+    int CantidadPedidos,
+    decimal TotalVenta,
+    decimal TotalMetros,
+    decimal TotalComision);
+
+public record GrupoVentaVentaDto(
+    int PedidoId,
+    DateTime Fecha,
+    int VendedorId,
+    string Vendedor,
+    string Cliente,
+    string Estado,
+    decimal TotalVenta,
+    decimal TotalMetros,
+    decimal TotalComision);
 
 public record MensajePendienteDto(string Clave, string Titulo, string Mensaje, string Tipo);
 

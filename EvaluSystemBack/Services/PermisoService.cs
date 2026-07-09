@@ -24,6 +24,31 @@ public class PermisoService : IPermisoService
             return Enumerable.Empty<PerfilFormularioPermisoDto>();
         }
 
+        if (await UsuarioEsAdministradorAsync(usuarioId))
+        {
+            var formulariosAdmin = await _context.Formularios
+                .AsNoTracking()
+                .Where(x => x.Estado)
+                .OrderBy(x => x.Orden)
+                .ThenBy(x => x.Nombre)
+                .ToListAsync();
+
+            return formulariosAdmin.Select(form => new PerfilFormularioPermisoDto(
+                0,
+                0,
+                "Administrador",
+                form.Id,
+                form.Nombre,
+                form.Descripcion,
+                form.Ruta,
+                form.Icono,
+                form.Orden,
+                true,
+                true,
+                true,
+                true));
+        }
+
         var permisos = await _context.PerfilFormularioPermisos
             .Include(x => x.Perfil)
             .Include(x => x.Formulario)
@@ -110,6 +135,11 @@ public class PermisoService : IPermisoService
             return false;
         }
 
+        if (await UsuarioEsAdministradorAsync(usuarioId))
+        {
+            return true;
+        }
+
         var permisos = await _context.PerfilFormularioPermisos
             .Include(x => x.Formulario)
             .Where(x =>
@@ -134,6 +164,31 @@ public class PermisoService : IPermisoService
             "eliminar" => permisos.Any(x => x.PuedeEliminar),
             _ => false
         };
+    }
+
+    private async Task<bool> UsuarioEsAdministradorAsync(int usuarioId)
+    {
+        var adminEnPerfiles = await _context.UsuarioPerfiles
+            .Include(x => x.Perfil)
+            .AnyAsync(x => x.UsuarioId == usuarioId &&
+                x.Estado &&
+                x.Perfil != null &&
+                x.Perfil.Estado &&
+                x.Perfil.Nombre == "Administrador");
+
+        if (adminEnPerfiles)
+        {
+            return true;
+        }
+
+        return await _context.Usuarios
+            .Include(x => x.Persona)
+            .ThenInclude(x => x!.Perfil)
+            .AnyAsync(x => x.Id == usuarioId &&
+                x.Persona != null &&
+                x.Persona.Perfil != null &&
+                x.Persona.Perfil.Estado &&
+                x.Persona.Perfil.Nombre == "Administrador");
     }
 
     public async Task<IEnumerable<FormularioDto>> GetFormulariosAsync()

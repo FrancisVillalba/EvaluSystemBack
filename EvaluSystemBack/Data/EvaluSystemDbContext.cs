@@ -21,6 +21,8 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<EstadoVenta> EstadosVenta => Set<EstadoVenta>();
     public DbSet<FormaPago> FormasPago => Set<FormaPago>();
     public DbSet<Formulario> Formularios => Set<Formulario>();
+    public DbSet<GrupoVenta> GruposVenta => Set<GrupoVenta>();
+    public DbSet<GrupoVentaVendedor> GrupoVentaVendedores => Set<GrupoVentaVendedor>();
     public DbSet<LotePago> LotesPago => Set<LotePago>();
     public DbSet<LotePagoDetalle> LotesPagoDetalle => Set<LotePagoDetalle>();
     public DbSet<MetodoEnvio> MetodosEnvio => Set<MetodoEnvio>();
@@ -28,6 +30,7 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<PerfilFormularioPermiso> PerfilFormularioPermisos => Set<PerfilFormularioPermiso>();
     public DbSet<Persona> Personas => Set<Persona>();
     public DbSet<Producto> Productos => Set<Producto>();
+    public DbSet<ProductoComision> ProductoComisiones => Set<ProductoComision>();
     public DbSet<RutaDelivery> RutasDelivery => Set<RutaDelivery>();
     public DbSet<RutaDeliveryDetalle> RutasDeliveryDetalle => Set<RutaDeliveryDetalle>();
     public DbSet<TipoCliente> TiposCliente => Set<TipoCliente>();
@@ -166,6 +169,38 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Estado).HasColumnName("estado");
         });
 
+        modelBuilder.Entity<GrupoVenta>(entity =>
+        {
+            entity.ToTable("Grupo_venta");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(120).IsRequired();
+            entity.Property(e => e.TeamLeaderUsuarioId).HasColumnName("team_leader_usuario_id");
+            entity.Property(e => e.Estado).HasColumnName("estado");
+            entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
+            entity.HasOne(e => e.TeamLeaderUsuario).WithMany().HasForeignKey(e => e.TeamLeaderUsuarioId).OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<GrupoVentaVendedor>(entity =>
+        {
+            entity.ToTable("Grupo_venta_vendedor");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.GrupoVentaId, e.VendedorUsuarioId }).IsUnique();
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.GrupoVentaId).HasColumnName("grupo_venta_id");
+            entity.Property(e => e.VendedorUsuarioId).HasColumnName("vendedor_usuario_id");
+            entity.Property(e => e.Estado).HasColumnName("estado");
+            entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
+            entity.HasOne(e => e.GrupoVenta).WithMany(e => e.Vendedores).HasForeignKey(e => e.GrupoVentaId);
+            entity.HasOne(e => e.VendedorUsuario).WithMany().HasForeignKey(e => e.VendedorUsuarioId).OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<LotePago>(entity =>
         {
             entity.ToTable("Lote_pago");
@@ -272,7 +307,6 @@ public class EvaluSystemDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(150).IsRequired();
             entity.Property(e => e.PrecioBase).HasColumnName("precio_base").HasPrecision(18, 2);
-            entity.Property(e => e.Comision).HasColumnName("comision").HasPrecision(18, 2);
             entity.Property(e => e.MaquinaId).HasColumnName("maquinaId");
             entity.Property(e => e.Estado).HasColumnName("estado");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
@@ -280,6 +314,26 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
             entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
             entity.HasOne(e => e.TipoMaquina).WithMany(e => e.Productos).HasForeignKey(e => e.MaquinaId);
+        });
+
+        modelBuilder.Entity<ProductoComision>(entity =>
+        {
+            entity.ToTable("Producto_comision");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.ProductoId, e.PerfilId, e.Estado });
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.ProductoId).HasColumnName("productoId");
+            entity.Property(e => e.PerfilId).HasColumnName("perfilId");
+            entity.Property(e => e.MontoPorMetro).HasColumnName("monto_por_metro").HasPrecision(18, 2);
+            entity.Property(e => e.Estado).HasColumnName("estado");
+            entity.Property(e => e.FechaDesde).HasColumnName("fecha_desde").HasColumnType("date");
+            entity.Property(e => e.FechaHasta).HasColumnName("fecha_hasta").HasColumnType("date");
+            entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
+            entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
+            entity.HasOne(e => e.Producto).WithMany(e => e.Comisiones).HasForeignKey(e => e.ProductoId);
+            entity.HasOne(e => e.Perfil).WithMany(e => e.ProductoComisiones).HasForeignKey(e => e.PerfilId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<RutaDelivery>(entity =>

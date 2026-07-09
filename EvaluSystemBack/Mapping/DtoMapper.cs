@@ -163,7 +163,7 @@ public static class DtoMapper
 
     public static ProductoDto ToDto(this Producto entity)
     {
-        return new ProductoDto(entity.Id, entity.Nombre, entity.PrecioBase, entity.Comision, entity.MaquinaId, entity.TipoMaquina?.Nombre, entity.Estado);
+        return new ProductoDto(entity.Id, entity.Nombre, entity.PrecioBase, entity.MaquinaId, entity.TipoMaquina?.Nombre, entity.Estado);
     }
 
     public static Producto ToEntity(this ProductoRequest request, Producto? entity = null)
@@ -171,9 +171,34 @@ public static class DtoMapper
         entity ??= new Producto();
         entity.Nombre = request.Nombre;
         entity.PrecioBase = request.PrecioBase;
-        entity.Comision = request.Comision;
         entity.MaquinaId = request.MaquinaId;
         entity.Estado = request.Estado;
+        return entity;
+    }
+
+    public static ProductoComisionDto ToDto(this ProductoComision entity)
+    {
+        return new ProductoComisionDto(
+            entity.Id,
+            entity.ProductoId,
+            entity.Producto?.Nombre,
+            entity.PerfilId,
+            entity.Perfil?.Nombre,
+            entity.MontoPorMetro,
+            entity.Estado,
+            entity.FechaDesde,
+            entity.FechaHasta);
+    }
+
+    public static ProductoComision ToEntity(this ProductoComisionRequest request, ProductoComision? entity = null)
+    {
+        entity ??= new ProductoComision();
+        entity.ProductoId = request.ProductoId;
+        entity.PerfilId = request.PerfilId;
+        entity.MontoPorMetro = request.MontoPorMetro;
+        entity.Estado = request.Estado;
+        entity.FechaDesde = request.FechaDesde?.Date;
+        entity.FechaHasta = request.FechaHasta?.Date;
         return entity;
     }
 
@@ -239,6 +264,35 @@ public static class DtoMapper
         entity ??= new Usuario();
         entity.NombreUsuario = request.NombreUsuario;
         entity.PersonaId = request.PersonaId;
+        entity.Estado = request.Estado;
+        return entity;
+    }
+
+    public static GrupoVentaDto ToDto(this GrupoVenta entity)
+    {
+        return new GrupoVentaDto(
+            entity.Id,
+            entity.Nombre,
+            entity.TeamLeaderUsuarioId,
+            entity.TeamLeaderUsuario is null ? null : NombreUsuario(entity.TeamLeaderUsuario),
+            entity.Estado,
+            entity.Vendedores.OrderBy(x => x.VendedorUsuario.NombreUsuario).Select(x => x.ToDto()));
+    }
+
+    public static GrupoVentaVendedorDto ToDto(this GrupoVentaVendedor entity)
+    {
+        return new GrupoVentaVendedorDto(
+            entity.Id,
+            entity.VendedorUsuarioId,
+            entity.VendedorUsuario is null ? null : NombreUsuario(entity.VendedorUsuario),
+            entity.Estado);
+    }
+
+    public static GrupoVenta ToEntity(this GrupoVentaRequest request, GrupoVenta? entity = null)
+    {
+        entity ??= new GrupoVenta();
+        entity.Nombre = request.Nombre;
+        entity.TeamLeaderUsuarioId = request.TeamLeaderUsuarioId;
         entity.Estado = request.Estado;
         return entity;
     }

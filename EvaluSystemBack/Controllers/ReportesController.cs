@@ -241,36 +241,50 @@ public class ReportesController : ControllerBase
             .Include(x => x.Persona)
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Persona is null ? x.NombreUsuario ?? $"Usuario {x.Id}" : NombrePersona(x.Persona));
+        var perfilesPorUsuario = await _context.UsuarioPerfiles
+            .Include(x => x.Perfil)
+            .AsNoTracking()
+            .Where(x => x.Estado && x.Perfil != null && x.Perfil.Estado)
+            .GroupBy(x => x.UsuarioId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(item => item.PerfilId).ToList());
+        var comisiones = await _context.ProductoComisiones
+            .AsNoTracking()
+            .Where(x => x.Estado)
+            .Where(x => x.FechaHasta == null || x.FechaHasta >= from)
+            .Where(x => x.FechaDesde == null || x.FechaDesde < toExclusive)
+            .ToListAsync();
+        var teamLeadersPorVendedor = await _context.GrupoVentaVendedores
+            .Include(x => x.GrupoVenta)
+            .AsNoTracking()
+            .Where(x => x.Estado && x.GrupoVenta.Estado)
+            .ToDictionaryAsync(x => x.VendedorUsuarioId, x => x.GrupoVenta.TeamLeaderUsuarioId);
 
-        var grouped = ventas
-            .GroupBy(x => x.VendedorId)
+        var detallesComision = new List<(int UsuarioId, ReporteComisionDetalleDto Detalle)>();
+        foreach (var venta in ventas)
+        {
+            foreach (var detalle in venta.Detalles)
+            {
+                detallesComision.Add((venta.VendedorId, BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true)));
+
+                if (teamLeadersPorVendedor.TryGetValue(venta.VendedorId, out var teamLeaderId))
+                {
+                    detallesComision.Add((teamLeaderId, BuildComisionDetalle(venta, detalle, teamLeaderId, perfilesPorUsuario, comisiones, incluirExtra: false)));
+                }
+            }
+        }
+
+        var grouped = detallesComision
+            .GroupBy(x => x.UsuarioId)
             .Select(group =>
             {
-                var detalles = group.SelectMany(venta => venta.Detalles.Select(detalle =>
-                {
-                    var precioExtra = detalle.PrecioExtra ?? 0;
-                    var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
-                    var comisionUnitario = detalle.Producto?.Comision ?? 0;
-                    var comisionTotal = detalle.Cantidad * comisionUnitario + precioExtra;
-
-                    return new ReporteComisionDetalleDto(
-                        venta.Id,
-                        venta.FechaCreacion,
-                        venta.Cliente?.Nombre ?? string.Empty,
-                        detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}",
-                        detalle.Cantidad,
-                        detalle.PrecioUnitario,
-                        precioExtra,
-                        totalDetalle,
-                        comisionUnitario,
-                        comisionTotal);
-                })).ToList();
+                var detalles = group.Select(x => x.Detalle).ToList();
+                var pedidoIds = detalles.Select(x => x.PedidoId).Distinct().ToHashSet();
 
                 return new ReporteComisionVendedorDto(
                     group.Key,
                     vendedores.GetValueOrDefault(group.Key, $"Usuario {group.Key}"),
-                    group.Select(x => x.Id).Distinct().Count(),
-                    group.Sum(x => x.TotalVenta),
+                    pedidoIds.Count,
+                    ventas.Where(x => pedidoIds.Contains(x.Id)).Sum(x => x.TotalVenta),
                     detalles.Sum(x => x.ComisionTotal),
                     detalles);
             })
@@ -278,6 +292,54 @@ public class ReportesController : ControllerBase
             .ToList();
 
         return new ReporteComisionesDto(from, to, grouped);
+    }
+
+    private static ReporteComisionDetalleDto BuildComisionDetalle(
+        VentaImpresionCab venta,
+        VentaImpresionDet detalle,
+        int usuarioComisionId,
+        IReadOnlyDictionary<int, List<int>> perfilesPorUsuario,
+        IReadOnlyCollection<ProductoComision> comisiones,
+        bool incluirExtra)
+    {
+        var precioExtra = detalle.PrecioExtra ?? 0;
+        var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
+        var comisionUnitario = ResolveComision(detalle.ProductoId, usuarioComisionId, venta.FechaCreacion, perfilesPorUsuario, comisiones);
+        var comisionTotal = detalle.Cantidad * comisionUnitario + (incluirExtra ? precioExtra : 0);
+
+        return new ReporteComisionDetalleDto(
+            venta.Id,
+            venta.FechaCreacion,
+            venta.Cliente?.Nombre ?? string.Empty,
+            detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}",
+            detalle.Cantidad,
+            detalle.PrecioUnitario,
+            incluirExtra ? precioExtra : 0,
+            totalDetalle,
+            comisionUnitario,
+            comisionTotal);
+    }
+
+    private static decimal ResolveComision(
+        int productoId,
+        int usuarioId,
+        DateTime fecha,
+        IReadOnlyDictionary<int, List<int>> perfilesPorUsuario,
+        IReadOnlyCollection<ProductoComision> comisiones)
+    {
+        if (!perfilesPorUsuario.TryGetValue(usuarioId, out var perfilIds))
+        {
+            return 0;
+        }
+
+        var fechaVenta = fecha.Date;
+        return comisiones
+            .Where(x => x.ProductoId == productoId && perfilIds.Contains(x.PerfilId))
+            .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
+            .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
+            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
+            .Select(x => x.MontoPorMetro)
+            .FirstOrDefault();
     }
 
     private static byte[] BuildComisionesXlsx(ReporteComisionesDto report)
