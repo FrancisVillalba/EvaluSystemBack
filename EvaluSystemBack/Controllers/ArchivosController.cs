@@ -9,6 +9,7 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class ArchivosController : ControllerBase
 {
+    private const long MaxUploadBytes = 500L * 1024L * 1024L;
     private readonly IConfiguracionService _configuracionService;
     private readonly IWebHostEnvironment _environment;
 
@@ -19,7 +20,8 @@ public class ArchivosController : ControllerBase
     }
 
     [HttpPost("upload")]
-    [RequestSizeLimit(50_000_000)]
+    [RequestSizeLimit(MaxUploadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
     public async Task<ActionResult<ArchivoUploadResponse>> Upload(IFormFile archivo, [FromForm] string? carpeta = null)
     {
         if (archivo.Length == 0)
@@ -34,9 +36,10 @@ public class ArchivosController : ControllerBase
         }
 
         var safeFolder = SanitizePathSegment(carpeta);
+        var dateFolder = DateTime.Today.ToString("yyyy-MM-dd");
         var targetFolder = string.IsNullOrWhiteSpace(safeFolder)
-            ? basePath
-            : Path.Combine(basePath, safeFolder);
+            ? Path.Combine(basePath, dateFolder)
+            : Path.Combine(basePath, safeFolder, dateFolder);
 
         Directory.CreateDirectory(targetFolder);
 
