@@ -47,7 +47,8 @@ public class AuthService : IAuthService
             return null;
         }
 
-        var expirationMinutes = await _configuracionService.ObtenerValorIntAsync("JwtExpirationMinutes", 1)
+        var expirationMinutes = await _configuracionService.ObtenerValorIntAsync("MINUTOS_EXPIRACION_SESSION", 1)
+            ?? await _configuracionService.ObtenerValorIntAsync("JwtExpirationMinutes", 1)
             ?? _jwtOptions.ExpirationMinutes;
         var expiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes);
         var persona = BuildPersonaName(usuario.Persona);

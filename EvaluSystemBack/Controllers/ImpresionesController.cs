@@ -190,7 +190,8 @@ public class ImpresionesController : ControllerBase
 
     private async Task<string> GetBasePathAsync()
     {
-        var basePath = await _configuracionService.ObtenerValorAsync("FileStoragePath", 1);
+        var basePath = await _configuracionService.ObtenerValorAsync("RUTA_DE_ARCHIVOS", 1)
+            ?? await _configuracionService.ObtenerValorAsync("FileStoragePath", 1);
         return string.IsNullOrWhiteSpace(basePath)
             ? Path.Combine(AppContext.BaseDirectory, "Archivos")
             : basePath;

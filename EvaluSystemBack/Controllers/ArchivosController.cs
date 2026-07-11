@@ -27,7 +27,7 @@ public class ArchivosController : ControllerBase
             return BadRequest(new { message = "El archivo esta vacio." });
         }
 
-        var basePath = await _configuracionService.ObtenerValorAsync("FileStoragePath", 1);
+        var basePath = await GetBasePathAsync();
         if (string.IsNullOrWhiteSpace(basePath))
         {
             basePath = Path.Combine(_environment.ContentRootPath, "Archivos");
@@ -144,7 +144,8 @@ public class ArchivosController : ControllerBase
 
     private async Task<string> GetBasePathAsync()
     {
-        var basePath = await _configuracionService.ObtenerValorAsync("FileStoragePath", 1);
+        var basePath = await _configuracionService.ObtenerValorAsync("RUTA_DE_ARCHIVOS", 1)
+            ?? await _configuracionService.ObtenerValorAsync("FileStoragePath", 1);
         return string.IsNullOrWhiteSpace(basePath)
             ? Path.Combine(_environment.ContentRootPath, "Archivos")
             : basePath;

@@ -35,18 +35,20 @@ public class ReportesController : ControllerBase
     public async Task<ActionResult<ReporteComisionesDto>> GetComisionesVendedores(
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int? vendedorId = null)
+        [FromQuery] int? vendedorId = null,
+        [FromQuery] string? scope = null)
     {
-        return Ok(await BuildComisionesAsync(dateFrom, dateTo, vendedorId));
+        return Ok(await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope));
     }
 
     [HttpGet("comisiones-vendedores/excel")]
     public async Task<ActionResult<ExcelFileDto>> ExportComisionesExcel(
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int? vendedorId = null)
+        [FromQuery] int? vendedorId = null,
+        [FromQuery] string? scope = null)
     {
-        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId);
+        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
         var bytes = BuildComisionesXlsx(report);
         var sellerFilePart = await ReportFileSellerNameAsync(vendedorId, report);
 
@@ -60,9 +62,10 @@ public class ReportesController : ControllerBase
     public async Task<ActionResult<ExcelFileDto>> ExportComisionesPdf(
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int? vendedorId = null)
+        [FromQuery] int? vendedorId = null,
+        [FromQuery] string? scope = null)
     {
-        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId);
+        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
         var bytes = CommissionPdfBuilder.Build(report, _environment.WebRootPath);
         var sellerFilePart = await ReportFileSellerNameAsync(vendedorId, report);
 
@@ -76,12 +79,13 @@ public class ReportesController : ControllerBase
     public async Task<ActionResult<ExcelFileDto>> ExportComisionesBancoTxt(
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int? vendedorId = null)
+        [FromQuery] int? vendedorId = null,
+        [FromQuery] string? scope = null)
     {
         try
         {
-            var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId);
-            var lote = await GetOrCreateComisionesLoteAsync(report, vendedorId);
+            var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
+            var lote = await GetOrCreateComisionesLoteAsync(report, vendedorId, scope);
 
             return Ok(new ExcelFileDto(
                 lote.NombreArchivo,
@@ -211,7 +215,7 @@ public class ReportesController : ControllerBase
         return Ok(new ReporteEnviosDto(from, to, resumen, detalles));
     }
 
-    private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId)
+    private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId, string? scope = null)
     {
         var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var to = (dateTo ?? DateTime.Today).Date;
@@ -241,12 +245,20 @@ public class ReportesController : ControllerBase
             .Include(x => x.Persona)
             .AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Persona is null ? x.NombreUsuario ?? $"Usuario {x.Id}" : NombrePersona(x.Persona));
-        var perfilesPorUsuario = await _context.UsuarioPerfiles
+        var perfilesUsuario = await _context.UsuarioPerfiles
             .Include(x => x.Perfil)
             .AsNoTracking()
             .Where(x => x.Estado && x.Perfil != null && x.Perfil.Estado)
+            .Select(x => new { x.UsuarioId, x.PerfilId, Perfil = x.Perfil!.Nombre })
+            .ToListAsync();
+        var perfilesPorUsuario = perfilesUsuario
             .GroupBy(x => x.UsuarioId)
-            .ToDictionaryAsync(x => x.Key, x => x.Select(item => item.PerfilId).ToList());
+            .ToDictionary(x => x.Key, x => x.Select(item => item.PerfilId).ToList());
+        var usuariosPerfilVendedor = perfilesUsuario
+            .Where(x => IsSellerProfile(x.Perfil))
+            .Select(x => x.UsuarioId)
+            .Distinct()
+            .ToHashSet();
         var comisiones = await _context.ProductoComisiones
             .AsNoTracking()
             .Where(x => x.Estado)
@@ -258,6 +270,14 @@ public class ReportesController : ControllerBase
             .AsNoTracking()
             .Where(x => x.Estado && x.GrupoVenta.Estado)
             .ToDictionaryAsync(x => x.VendedorUsuarioId, x => x.GrupoVenta.TeamLeaderUsuarioId);
+        var vendedoresExternos = teamLeadersPorVendedor.Keys.ToHashSet();
+        var scopeExternos = IsExternalCommissionsScope(scope);
+
+        ventas = ventas
+            .Where(x => scopeExternos
+                ? vendedoresExternos.Contains(x.VendedorId)
+                : usuariosPerfilVendedor.Contains(x.VendedorId) && !vendedoresExternos.Contains(x.VendedorId))
+            .ToList();
 
         var detallesComision = new List<(int UsuarioId, ReporteComisionDetalleDto Detalle)>();
         foreach (var venta in ventas)
@@ -265,11 +285,6 @@ public class ReportesController : ControllerBase
             foreach (var detalle in venta.Detalles)
             {
                 detallesComision.Add((venta.VendedorId, BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true)));
-
-                if (teamLeadersPorVendedor.TryGetValue(venta.VendedorId, out var teamLeaderId))
-                {
-                    detallesComision.Add((teamLeaderId, BuildComisionDetalle(venta, detalle, teamLeaderId, perfilesPorUsuario, comisiones, incluirExtra: false)));
-                }
             }
         }
 
@@ -292,6 +307,21 @@ public class ReportesController : ControllerBase
             .ToList();
 
         return new ReporteComisionesDto(from, to, grouped);
+    }
+
+    private static bool IsExternalCommissionsScope(string? scope)
+    {
+        return scope is not null &&
+            (scope.Equals("externos", StringComparison.OrdinalIgnoreCase) ||
+             scope.Equals("external", StringComparison.OrdinalIgnoreCase) ||
+             scope.Equals("vendedores-externos", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsSellerProfile(string? profile)
+    {
+        return profile is not null &&
+            (profile.Contains("vendedor", StringComparison.OrdinalIgnoreCase) ||
+             profile.Contains("ventas", StringComparison.OrdinalIgnoreCase));
     }
 
     private static ReporteComisionDetalleDto BuildComisionDetalle(
@@ -431,14 +461,16 @@ public class ReportesController : ControllerBase
         return stream.ToArray();
     }
 
-    private async Task<LotePago> GetOrCreateComisionesLoteAsync(ReporteComisionesDto report, int? vendedorId)
+    private async Task<LotePago> GetOrCreateComisionesLoteAsync(ReporteComisionesDto report, int? vendedorId, string? scope)
     {
+        var scopeFilePart = IsExternalCommissionsScope(scope) ? "externos-team-leaders" : "vendedores";
         var existing = await _context.LotesPago
             .AsNoTracking()
             .Where(x => x.TipoPago == TipoPagoComisiones)
             .Where(x => x.FechaDesde == report.FechaDesde.Date && x.FechaHasta == report.FechaHasta.Date)
             .Where(x => x.FechaPago == report.FechaHasta.Date)
             .Where(x => x.VendedorId == vendedorId)
+            .Where(x => x.NombreArchivo.Contains($"comisiones-{scopeFilePart}-"))
             .Where(x => x.Estado != EstadoLoteAnulado)
             .OrderByDescending(x => x.Id)
             .FirstOrDefaultAsync();
@@ -448,7 +480,7 @@ public class ReportesController : ControllerBase
             return existing;
         }
 
-        var file = await BuildComisionesBancoTxtAsync(report, report.FechaHasta.Date);
+        var file = await BuildComisionesBancoTxtAsync(report, report.FechaHasta.Date, scope);
         var sellerFilePart = await ReportFileSellerNameAsync(vendedorId, report);
         var lote = new LotePago
         {
@@ -461,7 +493,7 @@ public class ReportesController : ControllerBase
             VendedorId = vendedorId,
             MontoTotal = file.Rows.Sum(x => x.Monto),
             CantidadPersonas = file.Rows.Count,
-            NombreArchivo = $"banco-continental-comisiones-{sellerFilePart}-{DateTime.Now:yyyyMMddHHmm}.txt",
+            NombreArchivo = $"banco-continental-comisiones-{scopeFilePart}-{sellerFilePart}-{DateTime.Now:yyyyMMddHHmm}.txt",
             Estado = EstadoLoteGenerado,
             ContenidoTxt = file.Content
         };
@@ -488,7 +520,7 @@ public class ReportesController : ControllerBase
         return lote;
     }
 
-    private async Task<BankTxtFile> BuildComisionesBancoTxtAsync(ReporteComisionesDto report, DateTime fechaPago)
+    private async Task<BankTxtFile> BuildComisionesBancoTxtAsync(ReporteComisionesDto report, DateTime fechaPago, string? scope)
     {
         var cuentaDebitoEmpresa = await ConfigValueAsync("BANCO_CONTINENTAL_COMISIONES", 1, "012312345699");
         var concepto = await ConfigValueAsync("BANCO_CONTINENTAL_COMISIONES", 2, "SALARIO");
@@ -500,11 +532,8 @@ public class ReportesController : ControllerBase
             throw new InvalidOperationException("Falta configurar la cuenta de debito de la empresa para Banco Continental.");
         }
 
-        var sellerIds = report.Vendedores
-            .Where(x => x.TotalComision > 0)
-            .Select(x => x.VendedorId)
-            .Distinct()
-            .ToList();
+        var payees = await BuildCommissionTxtPayeesAsync(report, scope);
+        var sellerIds = payees.Select(x => x.UsuarioId).Distinct().ToList();
 
         var sellers = await _context.Usuarios
             .Include(x => x.Persona)
@@ -515,9 +544,9 @@ public class ReportesController : ControllerBase
         var rows = new List<BankTxtRow>();
         var missing = new List<string>();
 
-        foreach (var seller in report.Vendedores.Where(x => x.TotalComision > 0).OrderBy(x => x.Vendedor))
+        foreach (var seller in payees.OrderBy(x => x.Vendedor))
         {
-            sellers.TryGetValue(seller.VendedorId, out var usuario);
+            sellers.TryGetValue(seller.UsuarioId, out var usuario);
             var documento = usuario?.Persona?.Documento?.Trim();
             if (string.IsNullOrWhiteSpace(documento))
             {
@@ -536,7 +565,7 @@ public class ReportesController : ControllerBase
                 Quote(NormalizeTipoCuenta(tipoCuenta)));
 
             rows.Add(new BankTxtRow(
-                seller.VendedorId,
+                seller.UsuarioId,
                 seller.Vendedor,
                 documento,
                 cuentaDebitoEmpresa.Trim(),
@@ -559,6 +588,54 @@ public class ReportesController : ControllerBase
         }
 
         return new BankTxtFile(string.Join(Environment.NewLine, rows.Select(x => x.LineaTxt)), rows);
+    }
+
+    private async Task<List<CommissionTxtPayee>> BuildCommissionTxtPayeesAsync(ReporteComisionesDto report, string? scope)
+    {
+        var sellers = report.Vendedores
+            .Where(x => x.TotalComision > 0)
+            .ToList();
+
+        if (!IsExternalCommissionsScope(scope))
+        {
+            return sellers
+                .Select(x => new CommissionTxtPayee(x.VendedorId, x.Vendedor, x.TotalComision))
+                .ToList();
+        }
+
+        var sellerIds = sellers.Select(x => x.VendedorId).Distinct().ToList();
+        var groupSellerRows = await _context.GrupoVentaVendedores
+            .Include(x => x.GrupoVenta)
+            .AsNoTracking()
+            .Where(x => x.Estado && x.GrupoVenta.Estado && sellerIds.Contains(x.VendedorUsuarioId))
+            .ToListAsync();
+        var teamLeadersPorVendedor = groupSellerRows
+            .GroupBy(x => x.VendedorUsuarioId)
+            .ToDictionary(x => x.Key, x => x.OrderBy(item => item.Id).First().GrupoVenta.TeamLeaderUsuarioId);
+        var sellersWithoutTeamLeader = sellers
+            .Where(x => !teamLeadersPorVendedor.ContainsKey(x.VendedorId))
+            .Select(x => x.Vendedor)
+            .ToList();
+
+        if (sellersWithoutTeamLeader.Count > 0)
+        {
+            throw new InvalidOperationException($"Falta configurar Team Leader para generar el TXT externo: {string.Join(", ", sellersWithoutTeamLeader)}.");
+        }
+
+        var teamLeaderIds = teamLeadersPorVendedor.Values.Distinct().ToList();
+        var teamLeaderNames = await _context.Usuarios
+            .Include(x => x.Persona)
+            .AsNoTracking()
+            .Where(x => teamLeaderIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Persona is null ? x.NombreUsuario ?? $"Usuario {x.Id}" : NombrePersona(x.Persona));
+
+        return sellers
+            .GroupBy(x => teamLeadersPorVendedor[x.VendedorId])
+            .Select(group => new CommissionTxtPayee(
+                group.Key,
+                teamLeaderNames.GetValueOrDefault(group.Key, $"Usuario {group.Key}"),
+                group.Sum(x => x.TotalComision)))
+            .ToList();
     }
 
     private async Task<string> ConfigValueAsync(string nombre, int nroConfiguracion, string defaultValue)
@@ -632,6 +709,8 @@ public class ReportesController : ControllerBase
             _ => "Delivery"
         };
     }
+
+    private record CommissionTxtPayee(int UsuarioId, string Vendedor, decimal TotalComision);
 
     private record BankTxtFile(string Content, IReadOnlyList<BankTxtRow> Rows);
 

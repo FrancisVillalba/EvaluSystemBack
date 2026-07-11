@@ -14,6 +14,7 @@ namespace EvaluSystemBack.Controllers;
 public class MensajesController : ControllerBase
 {
     private const int DiasMoraPedidoDefault = 7;
+    private const string ConfigDiasAtrasoSaldoPendiente = "DIAS_ATRASO_SALDO_PENDIENTE";
     private const string ConfigDiasAvisoSaldoPendiente = "DiasAvisoSaldoPendiente";
     private const int FlujoEliminado = 5;
     private readonly EvaluSystemDbContext _context;
@@ -105,7 +106,6 @@ public class MensajesController : ControllerBase
 
     private async Task<IEnumerable<MensajePendienteDto>> BuildPagosPendientesAsync(int usuarioId, CancellationToken cancellationToken)
     {
-        var isAdmin = await IsAdminAsync(usuarioId, cancellationToken);
         var diasMoraPedido = await GetDiasMoraPedidoAsync(cancellationToken);
         var limite = DateTime.Today.AddDays(-diasMoraPedido);
 
@@ -116,11 +116,7 @@ public class MensajesController : ControllerBase
             .Where(x => x.FechaCreacion.Date <= limite)
             .Where(x => x.TotalVenta > (x.MontoPagado ?? 0))
             .Where(x => x.EstadoVenta == null || x.EstadoVenta.NumeroFlujo != FlujoEliminado);
-
-        if (!isAdmin)
-        {
-            query = query.Where(x => x.VendedorId == usuarioId);
-        }
+        query = query.Where(x => x.VendedorId == usuarioId);
 
         var pedidos = await query
             .OrderBy(x => x.FechaCreacion)
@@ -144,7 +140,8 @@ public class MensajesController : ControllerBase
     {
         var valor = await _context.Configuraciones
             .AsNoTracking()
-            .Where(x => x.Nombre == ConfigDiasAvisoSaldoPendiente && x.NroConfiguracion == 1)
+            .Where(x => (x.Nombre == ConfigDiasAtrasoSaldoPendiente || x.Nombre == ConfigDiasAvisoSaldoPendiente) && x.NroConfiguracion == 1)
+            .OrderBy(x => x.Nombre == ConfigDiasAtrasoSaldoPendiente ? 0 : 1)
             .Select(x => x.Valor)
             .FirstOrDefaultAsync(cancellationToken);
 
