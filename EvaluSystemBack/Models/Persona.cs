@@ -16,6 +16,7 @@ public class Persona
     public int UsuModificacion { get; set; }
     public string? TipoDocumentoId { get; set; }
     public string? Documento { get; set; }
+    public string? Telefono { get; set; }
 
     public Perfil? Perfil { get; set; }
     public TipoDocumento? TipoDocumento { get; set; }

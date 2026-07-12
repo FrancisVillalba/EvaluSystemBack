@@ -93,6 +93,7 @@ public record PersonaDto(
     DateTime? FechaCumpleanios,
     string? TipoDocumentoId,
     string? Documento,
+    string? Telefono,
     bool? Estado);
 
 public record PersonaRequest(
@@ -104,6 +105,7 @@ public record PersonaRequest(
     DateTime? FechaCumpleanios,
     string? TipoDocumentoId,
     string? Documento,
+    string? Telefono,
     bool? Estado);
 
 public record ProductoDto(int Id, string Nombre, decimal PrecioBase, int? MaquinaId, string? Maquina, bool Estado);

@@ -297,6 +297,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
             entity.Property(e => e.TipoDocumentoId).HasColumnName("tipo_documento").HasMaxLength(50);
             entity.Property(e => e.Documento).HasColumnName("documento").HasMaxLength(50);
+            entity.Property(e => e.Telefono).HasColumnName("telefono").HasMaxLength(50);
             entity.HasOne(e => e.Perfil).WithMany(e => e.Personas).HasForeignKey(e => e.PerfilId);
             entity.HasOne(e => e.TipoDocumento).WithMany(e => e.Personas).HasForeignKey(e => e.TipoDocumentoId);
         });

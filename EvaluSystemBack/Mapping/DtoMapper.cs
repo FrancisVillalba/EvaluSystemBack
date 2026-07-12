@@ -143,6 +143,7 @@ public static class DtoMapper
             entity.FechaCumpleanios,
             entity.TipoDocumentoId,
             entity.Documento,
+            entity.Telefono,
             entity.Estado);
     }
 
@@ -157,6 +158,7 @@ public static class DtoMapper
         entity.FechaCumpleanios = request.FechaCumpleanios;
         entity.TipoDocumentoId = request.TipoDocumentoId;
         entity.Documento = request.Documento;
+        entity.Telefono = request.Telefono;
         entity.Estado = request.Estado;
         return entity;
     }
