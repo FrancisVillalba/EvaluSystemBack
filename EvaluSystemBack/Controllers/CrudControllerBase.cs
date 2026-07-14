@@ -1,3 +1,4 @@
+using EvaluSystemBack.Dtos;
 using EvaluSystemBack.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,10 +16,42 @@ public abstract class CrudControllerBase<TEntity, TKey> : ControllerBase where T
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<TEntity>>> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] string? search = null, [FromQuery] int? page = null, [FromQuery] int pageSize = 10)
     {
         var result = await _service.GetAllAsync();
-        return Ok(result);
+        if (!page.HasValue)
+        {
+            return Ok(result);
+        }
+
+        var currentPage = Math.Max(page.Value, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var filtered = result.Where(item => MatchesSearch(item, search)).ToList();
+        var totalItems = filtered.Count;
+        var totalPages = Math.Max((int)Math.Ceiling(totalItems / (double)pageSize), 1);
+        currentPage = Math.Min(currentPage, totalPages);
+
+        return Ok(new PagedResponse<TEntity>(
+            filtered.Skip((currentPage - 1) * pageSize).Take(pageSize),
+            currentPage,
+            pageSize,
+            totalItems,
+            totalPages));
+    }
+
+    private static bool MatchesSearch(TEntity item, string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return true;
+        }
+
+        var term = search.Trim();
+        return item.GetType()
+            .GetProperties()
+            .Where(property => property.PropertyType == typeof(string) || property.PropertyType.IsPrimitive || property.PropertyType == typeof(decimal) || property.PropertyType == typeof(DateTime))
+            .Select(property => property.GetValue(item)?.ToString())
+            .Any(value => !string.IsNullOrWhiteSpace(value) && value.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
     [HttpGet("{id}")]
