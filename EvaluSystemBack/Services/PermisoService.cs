@@ -100,17 +100,7 @@ public class PermisoService : IPermisoService
             .Distinct()
             .ToListAsync();
 
-        if (perfilIds.Count > 0)
-        {
-            return perfilIds;
-        }
-
-        var perfilId = await _context.Usuarios
-            .Where(x => x.Id == usuarioId)
-            .Select(x => x.Persona != null ? x.Persona.PerfilId : null)
-            .FirstOrDefaultAsync();
-
-        return perfilId.HasValue ? new List<int> { perfilId.Value } : new List<int>();
+        return perfilIds;
     }
 
     public async Task<IEnumerable<PerfilFormularioPermisoDto>> ObtenerPermisosPorPerfilAsync(int perfilId)
@@ -176,19 +166,7 @@ public class PermisoService : IPermisoService
                 x.Perfil.Estado &&
                 x.Perfil.Nombre == "Administrador");
 
-        if (adminEnPerfiles)
-        {
-            return true;
-        }
-
-        return await _context.Usuarios
-            .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
-            .AnyAsync(x => x.Id == usuarioId &&
-                x.Persona != null &&
-                x.Persona.Perfil != null &&
-                x.Persona.Perfil.Estado &&
-                x.Persona.Perfil.Nombre == "Administrador");
+        return adminEnPerfiles;
     }
 
     public async Task<IEnumerable<FormularioDto>> GetFormulariosAsync()

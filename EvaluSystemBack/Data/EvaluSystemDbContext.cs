@@ -284,7 +284,6 @@ public class EvaluSystemDbContext : DbContext
         {
             entity.ToTable("Persona");
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.PerfilId).HasColumnName("perfilId");
             entity.Property(e => e.PrimerNombre).HasColumnName("primer_nombre").HasMaxLength(50);
             entity.Property(e => e.SegundoNombre).HasColumnName("segundo_nombre").HasMaxLength(50);
             entity.Property(e => e.PrimerApellido).HasColumnName("primer_apellido").HasMaxLength(50);
@@ -298,7 +297,6 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.TipoDocumentoId).HasColumnName("tipo_documento").HasMaxLength(50);
             entity.Property(e => e.Documento).HasColumnName("documento").HasMaxLength(50);
             entity.Property(e => e.Telefono).HasColumnName("telefono").HasMaxLength(50);
-            entity.HasOne(e => e.Perfil).WithMany(e => e.Personas).HasForeignKey(e => e.PerfilId);
             entity.HasOne(e => e.TipoDocumento).WithMany(e => e.Personas).HasForeignKey(e => e.TipoDocumentoId);
         });
 
@@ -447,6 +445,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.ClienteId).HasColumnName("clienteId");
             entity.Property(e => e.FormaPagoId).HasColumnName("formaPagoId").HasMaxLength(1).IsRequired();
             entity.Property(e => e.TotalVenta).HasColumnName("total_venta").HasPrecision(18, 2);
+            entity.Property(e => e.MontoEnvioTransportadora).HasColumnName("monto_envio_transportadora").HasPrecision(18, 2);
             entity.Property(e => e.EstadoVentaId).HasColumnName("estadoVentaId").HasMaxLength(2).IsRequired();
             entity.Property(e => e.VendedorId).HasColumnName("vendedorId");
             entity.Property(e => e.MontoPagado).HasColumnName("montoPagado").HasPrecision(18, 2);

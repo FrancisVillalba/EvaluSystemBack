@@ -84,8 +84,6 @@ public record TransportadoraRequest([Required] string Nombre, string? Telefono, 
 
 public record PersonaDto(
     int Id,
-    int? PerfilId,
-    string? Perfil,
     string? PrimerNombre,
     string? SegundoNombre,
     string? PrimerApellido,
@@ -97,7 +95,6 @@ public record PersonaDto(
     bool? Estado);
 
 public record PersonaRequest(
-    int? PerfilId,
     string? PrimerNombre,
     string? SegundoNombre,
     string? PrimerApellido,
@@ -215,7 +212,8 @@ public record VentaImpresionOptionsDto(
     IEnumerable<TipoMaquinaDto> Maquinas,
     int? UsuarioActualId,
     bool PuedeVerTodosPedidos,
-    bool PuedeVerVentasUsuario);
+    bool PuedeVerVentasUsuario,
+    decimal MontoEnvioTransportadora);
 
 public record VentaUsuarioResumenDto(
     DateTime FechaDesde,
@@ -248,6 +246,7 @@ public record VentaImpresionCabDto(
     string FormaPagoId,
     string? FormaPago,
     decimal TotalVenta,
+    decimal MontoEnvioTransportadora,
     string EstadoVentaId,
     string? EstadoVenta,
     int VendedorId,

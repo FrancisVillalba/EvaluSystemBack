@@ -26,7 +26,6 @@ public class UsuariosController : ControllerBase
     {
         var items = await _context.Usuarios
             .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
             .Include(x => x.Perfiles)
             .ThenInclude(x => x.Perfil)
             .AsNoTracking()
@@ -39,7 +38,6 @@ public class UsuariosController : ControllerBase
     {
         var item = await _context.Usuarios
             .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
             .Include(x => x.Perfiles)
             .ThenInclude(x => x.Perfil)
             .AsNoTracking()
@@ -103,7 +101,6 @@ public class UsuariosController : ControllerBase
     {
         return _context.Usuarios
             .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
             .Include(x => x.Perfiles)
             .ThenInclude(x => x.Perfil)
             .AsNoTracking();
@@ -115,19 +112,6 @@ public class UsuariosController : ControllerBase
             .Where(x => x > 0)
             .Distinct()
             .ToList();
-
-        if (ids.Count == 0)
-        {
-            var perfilPersona = await _context.Usuarios
-                .Where(x => x.Id == usuarioId)
-                .Select(x => x.Persona != null ? x.Persona.PerfilId : null)
-                .FirstOrDefaultAsync();
-
-            if (perfilPersona.HasValue)
-            {
-                ids.Add(perfilPersona.Value);
-            }
-        }
 
         var actuales = await _context.UsuarioPerfiles
             .Where(x => x.UsuarioId == usuarioId)

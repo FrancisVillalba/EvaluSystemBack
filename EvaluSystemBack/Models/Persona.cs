@@ -3,7 +3,6 @@ namespace EvaluSystemBack.Models;
 public class Persona
 {
     public int Id { get; set; }
-    public int? PerfilId { get; set; }
     public string? PrimerNombre { get; set; }
     public string? SegundoNombre { get; set; }
     public string? PrimerApellido { get; set; }
@@ -18,7 +17,6 @@ public class Persona
     public string? Documento { get; set; }
     public string? Telefono { get; set; }
 
-    public Perfil? Perfil { get; set; }
     public TipoDocumento? TipoDocumento { get; set; }
     public ICollection<Usuario> Usuarios { get; set; } = new List<Usuario>();
 }

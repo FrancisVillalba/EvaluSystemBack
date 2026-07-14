@@ -328,19 +328,7 @@ public class GruposVentaController : ControllerBase
                 x.Perfil.Estado &&
                 x.Perfil.Nombre == profileName);
 
-        if (hasProfile)
-        {
-            return true;
-        }
-
-        return await _context.Usuarios
-            .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
-            .AnyAsync(x => x.Id == usuarioId &&
-                x.Persona != null &&
-                x.Persona.Perfil != null &&
-                x.Persona.Perfil.Estado &&
-                x.Persona.Perfil.Nombre == profileName);
+        return hasProfile;
     }
 
     private async Task<int> ProfileIdAsync(string profileName)

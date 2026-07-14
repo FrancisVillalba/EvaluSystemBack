@@ -23,7 +23,8 @@ public record ReporteComisionDetalleDto(
     decimal PrecioExtra,
     decimal TotalDetalle,
     decimal ComisionUnitario,
-    decimal ComisionTotal);
+    decimal ComisionTotal,
+    string? VendedorOrigen = null);
 
 public record LotePagoDto(
     int Id,
@@ -64,3 +65,55 @@ public record ReporteEnvioDetalleDto(
     string? UsuarioEntrega,
     string? Ciudad,
     decimal TotalPedido);
+
+public record ReporteResumenGerencialDto(
+    DateTime FechaDesde,
+    DateTime FechaHasta,
+    decimal TotalVendido,
+    int CantidadPedidos,
+    decimal PromedioPedido,
+    decimal TotalVendidoComisionPagada,
+    decimal TotalComisionPagada,
+    IEnumerable<ReporteResumenMaquinaDto> VentasPorMaquina,
+    IEnumerable<ReporteResumenPerfilComisionDto> ComisionesPorPerfil);
+
+public record ReporteResumenMaquinaDto(
+    string Maquina,
+    int CantidadPedidos,
+    decimal Cantidad,
+    decimal TotalVenta);
+
+public record ReporteResumenPerfilComisionDto(
+    string Perfil,
+    int CantidadPedidos,
+    decimal TotalVendido);
+
+public record ReporteResumenEstadoDto(
+    string Estado,
+    int NumeroFlujo,
+    int CantidadPedidos,
+    decimal TotalVenta);
+
+public record ReporteResumenVendedorDto(
+    int VendedorId,
+    string Vendedor,
+    int CantidadPedidos,
+    decimal TotalVenta,
+    decimal TotalComision);
+
+public record ReporteResumenDeudaDto(
+    int PedidoId,
+    DateTime Fecha,
+    string Cliente,
+    string Vendedor,
+    decimal TotalVenta,
+    decimal MontoPagado,
+    decimal Saldo,
+    int DiasAtraso);
+
+public record ReporteResumenEntregaDto(
+    int? UsuarioEntregaId,
+    string UsuarioEntrega,
+    int PedidosTomados,
+    int PedidosEntregados,
+    decimal TotalMovido);

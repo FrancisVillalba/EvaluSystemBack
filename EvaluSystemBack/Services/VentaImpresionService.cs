@@ -21,12 +21,18 @@ public class VentaImpresionService : IVentaImpresionService
     private const int FlujoEliminado = 5;
     private const int UltimoFlujoEditable = FlujoEnvio;
     private const string MetodoEntregaDelivery = "DELIVERY";
+    private const string MetodoEntregaTransportadora = "TRANSPORTADORA";
+    private const string ConfigMontoEnvioTransportadora = "MONTO_ENVIO_TRANSPORTADORA";
+    private const int ConfigMontoEnvioTransportadoraNumero = 1;
+    private const int MontoEnvioTransportadoraDefault = 10000;
 
     private readonly EvaluSystemDbContext _context;
+    private readonly IConfiguracionService _configuracionService;
 
-    public VentaImpresionService(EvaluSystemDbContext context)
+    public VentaImpresionService(EvaluSystemDbContext context, IConfiguracionService configuracionService)
     {
         _context = context;
+        _configuracionService = configuracionService;
     }
 
     public async Task<VentaImpresionCabDto> CrearVentaCompletaAsync(VentaImpresionCompletaRequest request)
@@ -39,9 +45,10 @@ public class VentaImpresionService : IVentaImpresionService
 
         await ValidarDetallesAsync(detalles);
 
-        var totalVenta = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
+        var metodoEntrega = NormalizeMetodoEntrega(request.MetodoEntrega);
+        var totalVenta = await CalcularTotalVentaAsync(detalles, metodoEntrega);
         await ValidarEstadoInicialAsync(request.EstadoVentaId);
-        await ValidarCabeceraAsync(request, totalVenta);
+        await ValidarCabeceraAsync(request, totalVenta.TotalVenta);
         await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -50,7 +57,8 @@ public class VentaImpresionService : IVentaImpresionService
         {
             ClienteId = request.ClienteId,
             FormaPagoId = request.FormaPagoId,
-            TotalVenta = totalVenta,
+            TotalVenta = totalVenta.TotalVenta,
+            MontoEnvioTransportadora = totalVenta.MontoEnvioTransportadora,
             EstadoVentaId = string.IsNullOrWhiteSpace(request.EstadoVentaId) ? EstadoVentaInicial : request.EstadoVentaId,
             VendedorId = request.VendedorId,
             MontoPagado = request.MontoPagado ?? 0,
@@ -59,7 +67,7 @@ public class VentaImpresionService : IVentaImpresionService
             ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago),
             ComprobantePagoNombre = request.ComprobantePagoNombre,
             Observacion = request.Observacion,
-            MetodoEntrega = NormalizeMetodoEntrega(request.MetodoEntrega)
+            MetodoEntrega = metodoEntrega
         };
 
         _context.VentasImpresionCab.Add(cabecera);
@@ -131,8 +139,9 @@ public class VentaImpresionService : IVentaImpresionService
             throw new InvalidOperationException("Uno o mas detalles no pertenecen a la venta.");
         }
 
-        var totalVenta = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
-        if (EsActualizacionSoloPago(cabecera, request, totalVenta, detalles))
+        var metodoEntrega = NormalizeMetodoEntrega(request.MetodoEntrega);
+        var totalVenta = await CalcularTotalVentaAsync(detalles, cabecera, metodoEntrega);
+        if (EsActualizacionSoloPago(cabecera, request, totalVenta.TotalVenta, detalles))
         {
             await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
             await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
@@ -153,7 +162,7 @@ public class VentaImpresionService : IVentaImpresionService
         }
 
         await ValidarDetallesAsync(detalles);
-        await ValidarCabeceraAsync(request, totalVenta);
+        await ValidarCabeceraAsync(request, totalVenta.TotalVenta);
         await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
         await ValidarVentaEditableAsync(cabecera);
         await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
@@ -171,8 +180,9 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
-        SetMetodoEntrega(cabecera, request.MetodoEntrega);
-        cabecera.TotalVenta = totalVenta;
+        SetMetodoEntrega(cabecera, metodoEntrega);
+        cabecera.TotalVenta = totalVenta.TotalVenta;
+        cabecera.MontoEnvioTransportadora = totalVenta.MontoEnvioTransportadora;
 
         var detallesParaEliminar = cabecera.Detalles
             .Where(x => !detalleIds.Contains(x.Id))
@@ -260,7 +270,6 @@ public class VentaImpresionService : IVentaImpresionService
 
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
-        cabecera.TotalVenta = request.TotalVenta;
         cabecera.EstadoVentaId = request.EstadoVentaId;
         cabecera.VendedorId = request.VendedorId;
         cabecera.MontoPagado = request.MontoPagado ?? 0;
@@ -270,6 +279,8 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
         SetMetodoEntrega(cabecera, request.MetodoEntrega);
+        cabecera.MontoEnvioTransportadora = await MontoEnvioTransportadoraParaActualizacionAsync(cabecera, cabecera.MetodoEntrega);
+        cabecera.TotalVenta = request.TotalVenta + cabecera.MontoEnvioTransportadora;
 
         await _context.SaveChangesAsync();
 
@@ -724,9 +735,15 @@ public class VentaImpresionService : IVentaImpresionService
             _ => false
         };
 
+        permitido = permitido || (
+            flujoActual.HasValue
+            && flujoDestino.HasValue
+            && flujoActual.Value <= UltimoFlujoEditable
+            && flujoDestino.Value == flujoActual.Value - 1);
+
         if (!permitido)
         {
-            throw new InvalidOperationException("Desde pedidos solo se puede enviar una venta de Carga a Impresion. Use los modulos de Impresiones o Envio para los siguientes estados.");
+            throw new InvalidOperationException("Desde pedidos solo se puede avanzar de Carga a Impresion o devolver una venta al estado anterior.");
         }
     }
 
@@ -984,9 +1001,11 @@ public class VentaImpresionService : IVentaImpresionService
             return;
         }
 
-        cabecera.TotalVenta = await _context.VentasImpresionDet
+        var totalDetalles = await _context.VentasImpresionDet
             .Where(x => x.CabId == cabId)
             .SumAsync(x => x.Cantidad * x.PrecioUnitario + (x.PrecioExtra ?? 0));
+        cabecera.MontoEnvioTransportadora = await MontoEnvioTransportadoraAsync(cabecera.MetodoEntrega);
+        cabecera.TotalVenta = totalDetalles + cabecera.MontoEnvioTransportadora;
 
         await _context.SaveChangesAsync();
     }
@@ -995,6 +1014,72 @@ public class VentaImpresionService : IVentaImpresionService
     {
         return cantidad * precioUnitario + (precioExtra ?? 0);
     }
+
+    private async Task<TotalVentaCalculado> CalcularTotalVentaAsync(IEnumerable<VentaImpresionDetalleCreateRequest> detalles, string? metodoEntrega)
+    {
+        var totalDetalles = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
+        var montoEnvioTransportadora = await MontoEnvioTransportadoraAsync(metodoEntrega);
+        return new TotalVentaCalculado(totalDetalles + montoEnvioTransportadora, montoEnvioTransportadora);
+    }
+
+    private async Task<TotalVentaCalculado> CalcularTotalVentaAsync(IEnumerable<VentaImpresionDetalleUpdateRequest> detalles, string? metodoEntrega)
+    {
+        var totalDetalles = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
+        var montoEnvioTransportadora = await MontoEnvioTransportadoraAsync(metodoEntrega);
+        return new TotalVentaCalculado(totalDetalles + montoEnvioTransportadora, montoEnvioTransportadora);
+    }
+
+    private async Task<TotalVentaCalculado> CalcularTotalVentaAsync(
+        IEnumerable<VentaImpresionDetalleUpdateRequest> detalles,
+        VentaImpresionCab cabecera,
+        string? metodoEntrega)
+    {
+        var totalDetalles = detalles.Sum(x => CalcularTotalDetalle(x.Cantidad, x.PrecioUnitario, x.PrecioExtra));
+        var montoEnvioTransportadora = await MontoEnvioTransportadoraParaActualizacionAsync(cabecera, metodoEntrega);
+        return new TotalVentaCalculado(totalDetalles + montoEnvioTransportadora, montoEnvioTransportadora);
+    }
+
+    private async Task<decimal> MontoEnvioTransportadoraParaActualizacionAsync(VentaImpresionCab cabecera, string? metodoEntrega)
+    {
+        if (!string.Equals(NormalizeMetodoEntrega(metodoEntrega), MetodoEntregaTransportadora, StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (string.Equals(NormalizeMetodoEntrega(cabecera.MetodoEntrega), MetodoEntregaTransportadora, StringComparison.OrdinalIgnoreCase)
+            && cabecera.MontoEnvioTransportadora > 0)
+        {
+            return cabecera.MontoEnvioTransportadora;
+        }
+
+        return await MontoEnvioTransportadoraAsync(metodoEntrega);
+    }
+
+    private async Task<decimal> MontoEnvioTransportadoraAsync(string? metodoEntrega)
+    {
+        if (!string.Equals(NormalizeMetodoEntrega(metodoEntrega), MetodoEntregaTransportadora, StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        var monto = await _configuracionService.ObtenerValorIntAsync(
+            ConfigMontoEnvioTransportadora,
+            ConfigMontoEnvioTransportadoraNumero);
+
+        if (monto.HasValue && monto.Value >= 0)
+        {
+            return monto.Value;
+        }
+
+        await _configuracionService.SaveAsync(new ConfiguracionRequest(
+            ConfigMontoEnvioTransportadora,
+            ConfigMontoEnvioTransportadoraNumero,
+            MontoEnvioTransportadoraDefault.ToString()));
+
+        return MontoEnvioTransportadoraDefault;
+    }
+
+    private readonly record struct TotalVentaCalculado(decimal TotalVenta, decimal MontoEnvioTransportadora);
 
     private IQueryable<VentaImpresionCab> QueryVentaCompleta()
     {

@@ -11,7 +11,6 @@ public class Perfil
     public DateTime FechaModificacion { get; set; }
     public int UsuModificacion { get; set; }
 
-    public ICollection<Persona> Personas { get; set; } = new List<Persona>();
     public ICollection<PerfilFormularioPermiso> FormularioPermisos { get; set; } = new List<PerfilFormularioPermiso>();
     public ICollection<UsuarioPerfil> Usuarios { get; set; } = new List<UsuarioPerfil>();
     public ICollection<ProductoComision> ProductoComisiones { get; set; } = new List<ProductoComision>();

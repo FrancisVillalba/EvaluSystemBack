@@ -20,14 +20,14 @@ public class PersonasController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<PersonaDto>>> GetAll()
     {
-        var items = await _context.Personas.Include(x => x.Perfil).AsNoTracking().ToListAsync();
+        var items = await _context.Personas.AsNoTracking().ToListAsync();
         return Ok(items.Select(x => x.ToDto()));
     }
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<PersonaDto>> GetById(int id)
     {
-        var item = await _context.Personas.Include(x => x.Perfil).AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        var item = await _context.Personas.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         return item is null ? NotFound() : Ok(item.ToDto());
     }
 

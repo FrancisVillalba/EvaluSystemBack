@@ -134,8 +134,6 @@ public static class DtoMapper
     {
         return new PersonaDto(
             entity.Id,
-            entity.PerfilId,
-            entity.Perfil?.Nombre,
             entity.PrimerNombre,
             entity.SegundoNombre,
             entity.PrimerApellido,
@@ -150,7 +148,6 @@ public static class DtoMapper
     public static Persona ToEntity(this PersonaRequest request, Persona? entity = null)
     {
         entity ??= new Persona();
-        entity.PerfilId = request.PerfilId;
         entity.PrimerNombre = request.PrimerNombre;
         entity.SegundoNombre = request.SegundoNombre;
         entity.PrimerApellido = request.PrimerApellido;
@@ -246,18 +243,16 @@ public static class DtoMapper
             .ToList();
         var perfilIds = perfiles.Select(x => x.PerfilId).ToList();
         var perfilNombres = string.Join(", ", perfiles.Select(x => x.Perfil!.Nombre));
-        var legacyPerfilId = entity.Persona?.PerfilId;
-        var legacyPerfil = entity.Persona?.Perfil?.Nombre;
 
         return new UsuarioDto(
             entity.Id,
             entity.NombreUsuario,
             entity.PersonaId,
             string.IsNullOrWhiteSpace(persona) ? null : persona,
-            perfilIds.FirstOrDefault() == 0 ? legacyPerfilId : perfilIds.First(),
-            string.IsNullOrWhiteSpace(perfilNombres) ? legacyPerfil : perfilNombres,
-            perfilIds.Count > 0 ? perfilIds : legacyPerfilId.HasValue ? new[] { legacyPerfilId.Value } : Array.Empty<int>(),
-            string.IsNullOrWhiteSpace(perfilNombres) ? legacyPerfil : perfilNombres,
+            perfilIds.Count > 0 ? perfilIds.First() : null,
+            string.IsNullOrWhiteSpace(perfilNombres) ? null : perfilNombres,
+            perfilIds,
+            string.IsNullOrWhiteSpace(perfilNombres) ? null : perfilNombres,
             entity.Estado);
     }
 
@@ -308,6 +303,7 @@ public static class DtoMapper
             entity.FormaPagoId,
             entity.FormaPago?.Nombre,
             entity.TotalVenta,
+            entity.MontoEnvioTransportadora,
             entity.EstadoVentaId,
             entity.EstadoVenta?.Nombre,
             entity.VendedorId,

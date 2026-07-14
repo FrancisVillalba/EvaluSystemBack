@@ -6,6 +6,7 @@ public class VentaImpresionCab
     public int ClienteId { get; set; }
     public string FormaPagoId { get; set; } = string.Empty;
     public decimal TotalVenta { get; set; }
+    public decimal MontoEnvioTransportadora { get; set; }
     public string EstadoVentaId { get; set; } = string.Empty;
     public int VendedorId { get; set; }
     public decimal? MontoPagado { get; set; }

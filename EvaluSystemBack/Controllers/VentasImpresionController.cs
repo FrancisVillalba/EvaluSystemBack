@@ -17,15 +17,25 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class VentasImpresionController : ControllerBase
 {
+    private const string ConfigMontoEnvioTransportadora = "MONTO_ENVIO_TRANSPORTADORA";
+    private const int ConfigMontoEnvioTransportadoraNumero = 1;
+    private const decimal MontoEnvioTransportadoraDefault = 10000;
+
     private readonly EvaluSystemDbContext _context;
     private readonly IVentaImpresionService _ventaImpresionService;
     private readonly IPermisoService _permisoService;
+    private readonly IConfiguracionService _configuracionService;
 
-    public VentasImpresionController(EvaluSystemDbContext context, IVentaImpresionService ventaImpresionService, IPermisoService permisoService)
+    public VentasImpresionController(
+        EvaluSystemDbContext context,
+        IVentaImpresionService ventaImpresionService,
+        IPermisoService permisoService,
+        IConfiguracionService configuracionService)
     {
         _context = context;
         _ventaImpresionService = ventaImpresionService;
         _permisoService = permisoService;
+        _configuracionService = configuracionService;
     }
 
     [HttpGet]
@@ -114,7 +124,6 @@ public class VentasImpresionController : ControllerBase
         var formasPago = await _context.FormasPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
         var usuarios = await _context.Usuarios
             .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
             .AsNoTracking()
             .Where(x => x.Estado != false)
             .ToListAsync();
@@ -134,6 +143,7 @@ public class VentasImpresionController : ControllerBase
             .Where(x => x.Estado)
             .ToListAsync();
         var maquinas = await _context.TiposMaquina.AsNoTracking().Where(x => x.Estado).ToListAsync();
+        var montoEnvioTransportadora = await MontoEnvioTransportadoraAsync();
 
         return Ok(new VentaImpresionOptionsDto(
             clientes.Select(x => x.ToDto()),
@@ -145,7 +155,27 @@ public class VentasImpresionController : ControllerBase
             maquinas.Select(x => x.ToDto()),
             currentUserId,
             canViewAll,
-            canViewUserSales));
+            canViewUserSales,
+            montoEnvioTransportadora));
+    }
+
+    private async Task<decimal> MontoEnvioTransportadoraAsync()
+    {
+        var valor = await _configuracionService.ObtenerValorAsync(
+            ConfigMontoEnvioTransportadora,
+            ConfigMontoEnvioTransportadoraNumero);
+
+        if (decimal.TryParse(valor, out var monto) && monto >= 0)
+        {
+            return monto;
+        }
+
+        await _configuracionService.SaveAsync(new ConfiguracionRequest(
+            ConfigMontoEnvioTransportadora,
+            ConfigMontoEnvioTransportadoraNumero,
+            MontoEnvioTransportadoraDefault.ToString()));
+
+        return MontoEnvioTransportadoraDefault;
     }
 
     [HttpGet("mis-ventas")]
@@ -625,19 +655,7 @@ public class VentasImpresionController : ControllerBase
                 x.Perfil.Estado &&
                 x.Perfil.Nombre == profileName);
 
-        if (hasProfile)
-        {
-            return true;
-        }
-
-        return await _context.Usuarios
-            .Include(x => x.Persona)
-            .ThenInclude(x => x!.Perfil)
-            .AnyAsync(x => x.Id == usuarioId &&
-                x.Persona != null &&
-                x.Persona.Perfil != null &&
-                x.Persona.Perfil.Estado &&
-                x.Persona.Perfil.Nombre == profileName);
+        return hasProfile;
     }
 
     private async Task<int> ProfileIdAsync(string profileName)

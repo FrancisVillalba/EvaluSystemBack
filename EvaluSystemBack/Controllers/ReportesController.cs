@@ -66,7 +66,7 @@ public class ReportesController : ControllerBase
         [FromQuery] string? scope = null)
     {
         var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
-        var bytes = CommissionPdfBuilder.Build(report, _environment.WebRootPath);
+        var bytes = CommissionPdfBuilder.Build(report, _environment.WebRootPath, IsTeamLeaderCommissionsScope(scope));
         var sellerFilePart = await ReportFileSellerNameAsync(vendedorId, report);
 
         return Ok(new ExcelFileDto(
@@ -215,7 +215,11 @@ public class ReportesController : ControllerBase
         return Ok(new ReporteEnviosDto(from, to, resumen, detalles));
     }
 
-    private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId, string? scope = null)
+    [HttpGet("resumen-gerencial")]
+    public async Task<ActionResult<ReporteResumenGerencialDto>> GetResumenGerencial(
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] int? vendedorId = null)
     {
         var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var to = (dateTo ?? DateTime.Today).Date;
@@ -223,11 +227,99 @@ public class ReportesController : ControllerBase
 
         var ventas = await _context.VentasImpresionCab
             .Include(x => x.Cliente)
+            .Include(x => x.EstadoVenta)
+            .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina)
+            .AsNoTracking()
+            .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
+            .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
+            .Where(x => x.EstadoVenta != null && x.EstadoVenta.NumeroFlujo != 5)
+            .OrderBy(x => x.FechaCreacion)
+            .ToListAsync();
+
+        ventas = ventas
+            .Where(x => x.EstadoVenta?.Nombre?.Contains("elimin", StringComparison.OrdinalIgnoreCase) != true)
+            .ToList();
+
+        var comisiones = await BuildComisionesAsync(from, to, vendedorId, "vendedores");
+        var comisionesExternas = await BuildComisionesAsync(from, to, vendedorId, "externos");
+        var pagosComisiones = await _context.LotesPago
+            .AsNoTracking()
+            .Where(x => x.TipoPago == TipoPagoComisiones)
+            .Where(x => x.FechaDesde >= from && x.FechaHasta <= to)
+            .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
+            .Where(x => x.Estado != EstadoLoteAnulado)
+            .ToListAsync();
+
+        var totalVendido = ventas.Sum(x => x.TotalVenta);
+        var cantidadPedidos = ventas.Count;
+        var ventasPorMaquina = ventas
+            .SelectMany(venta => venta.Detalles.Select(detalle => new
+            {
+                PedidoId = venta.Id,
+                Maquina = detalle.TipoMaquina?.Nombre ?? "Sin maquina",
+                detalle.Cantidad,
+                Total = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + (detalle.PrecioExtra ?? 0))
+            }))
+            .GroupBy(x => x.Maquina)
+            .Select(group => new ReporteResumenMaquinaDto(
+                group.Key,
+                group.Select(x => x.PedidoId).Distinct().Count(),
+                group.Sum(x => x.Cantidad),
+                group.Sum(x => x.Total)))
+            .OrderByDescending(x => x.TotalVenta)
+            .ThenBy(x => x.Maquina)
+            .ToList();
+        var comisionVentas = BuildResumenPerfilComision("Ventas", comisiones);
+        var comisionExternas = BuildResumenPerfilComision("Venta externa", comisionesExternas);
+        var pagosVentas = pagosComisiones
+            .Where(x => x.NombreArchivo.Contains("comisiones-vendedores-", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var pagosExternos = pagosComisiones
+            .Where(x => x.NombreArchivo.Contains("comisiones-externos-team-leaders-", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var totalComisionPagada = pagosComisiones
+            .Where(x => x.Estado == EstadoLotePagado)
+            .Sum(x => x.MontoTotal);
+        var totalVendidoComisionPagada =
+            (pagosVentas.Any(x => x.Estado == EstadoLotePagado) ? comisiones.Vendedores.Sum(x => x.TotalVenta) : 0) +
+            (pagosExternos.Any(x => x.Estado == EstadoLotePagado) ? comisionesExternas.Vendedores.Sum(x => x.TotalVenta) : 0);
+
+        return Ok(new ReporteResumenGerencialDto(
+            from,
+            to,
+            totalVendido,
+            cantidadPedidos,
+            cantidadPedidos == 0 ? 0 : totalVendido / cantidadPedidos,
+            totalVendidoComisionPagada,
+            totalComisionPagada,
+            ventasPorMaquina,
+            new[] { comisionVentas, comisionExternas }));
+    }
+
+    private static ReporteResumenPerfilComisionDto BuildResumenPerfilComision(
+        string perfil,
+        ReporteComisionesDto reporte)
+    {
+        return new ReporteResumenPerfilComisionDto(
+            perfil,
+            reporte.Vendedores.Sum(x => x.CantidadPedidos),
+            reporte.Vendedores.Sum(x => x.TotalVenta));
+    }
+
+    private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId, string? scope = null)
+    {
+        var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
+        var to = (dateTo ?? DateTime.Today).Date;
+        var toExclusive = to.AddDays(1);
+        var scopeTeamLeaders = IsTeamLeaderCommissionsScope(scope);
+
+        var ventas = await _context.VentasImpresionCab
+            .Include(x => x.Cliente)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.EstadoVenta)
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
-            .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
+            .Where(x => vendedorId == null || scopeTeamLeaders || x.VendedorId == vendedorId.Value)
             .Where(x =>
                 x.EstadoVenta != null &&
                 (x.EstadoVenta.NumeroFlujo == FlujoImpresion ||
@@ -274,17 +366,48 @@ public class ReportesController : ControllerBase
         var scopeExternos = IsExternalCommissionsScope(scope);
 
         ventas = ventas
-            .Where(x => scopeExternos
+            .Where(x => scopeExternos || scopeTeamLeaders
                 ? vendedoresExternos.Contains(x.VendedorId)
                 : usuariosPerfilVendedor.Contains(x.VendedorId) && !vendedoresExternos.Contains(x.VendedorId))
             .ToList();
 
         var detallesComision = new List<(int UsuarioId, ReporteComisionDetalleDto Detalle)>();
-        foreach (var venta in ventas)
+        if (scopeTeamLeaders)
         {
-            foreach (var detalle in venta.Detalles)
+            var teamLeaderPerfilId = await ProfileIdAsync("Team Leader");
+            var vendedoresExternosNombres = vendedores;
+            foreach (var venta in ventas)
             {
-                detallesComision.Add((venta.VendedorId, BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true)));
+                if (!teamLeadersPorVendedor.TryGetValue(venta.VendedorId, out var teamLeaderId))
+                {
+                    continue;
+                }
+
+                if (vendedorId.HasValue && teamLeaderId != vendedorId.Value)
+                {
+                    continue;
+                }
+
+                foreach (var detalle in venta.Detalles)
+                {
+                    detallesComision.Add((teamLeaderId, BuildComisionDetallePorPerfil(
+                        venta,
+                        detalle,
+                        teamLeaderPerfilId,
+                        comisiones,
+                        incluirExtra: false,
+                        vendedorOrigen: vendedoresExternosNombres.GetValueOrDefault(venta.VendedorId, $"Usuario {venta.VendedorId}"))));
+                }
+            }
+        }
+        else
+        {
+            foreach (var venta in ventas)
+            {
+                foreach (var detalle in venta.Detalles)
+                {
+                    detallesComision.Add((venta.VendedorId, BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true)));
+                }
             }
         }
 
@@ -315,6 +438,14 @@ public class ReportesController : ControllerBase
             (scope.Equals("externos", StringComparison.OrdinalIgnoreCase) ||
              scope.Equals("external", StringComparison.OrdinalIgnoreCase) ||
              scope.Equals("vendedores-externos", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsTeamLeaderCommissionsScope(string? scope)
+    {
+        return scope is not null &&
+            (scope.Equals("team-leaders", StringComparison.OrdinalIgnoreCase) ||
+             scope.Equals("teamleader", StringComparison.OrdinalIgnoreCase) ||
+             scope.Equals("team-leader", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsSellerProfile(string? profile)
@@ -350,6 +481,33 @@ public class ReportesController : ControllerBase
             comisionTotal);
     }
 
+    private static ReporteComisionDetalleDto BuildComisionDetallePorPerfil(
+        VentaImpresionCab venta,
+        VentaImpresionDet detalle,
+        int perfilComisionId,
+        IReadOnlyCollection<ProductoComision> comisiones,
+        bool incluirExtra,
+        string? vendedorOrigen = null)
+    {
+        var precioExtra = detalle.PrecioExtra ?? 0;
+        var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
+        var comisionUnitario = ResolveComisionPorPerfil(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
+        var comisionTotal = detalle.Cantidad * comisionUnitario + (incluirExtra ? precioExtra : 0);
+
+        return new ReporteComisionDetalleDto(
+            venta.Id,
+            venta.FechaCreacion,
+            venta.Cliente?.Nombre ?? string.Empty,
+            detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}",
+            detalle.Cantidad,
+            detalle.PrecioUnitario,
+            incluirExtra ? precioExtra : 0,
+            totalDetalle,
+            comisionUnitario,
+            comisionTotal,
+            vendedorOrigen);
+    }
+
     private static decimal ResolveComision(
         int productoId,
         int usuarioId,
@@ -365,6 +523,27 @@ public class ReportesController : ControllerBase
         var fechaVenta = fecha.Date;
         return comisiones
             .Where(x => x.ProductoId == productoId && perfilIds.Contains(x.PerfilId))
+            .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
+            .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
+            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
+            .Select(x => x.MontoPorMetro)
+            .FirstOrDefault();
+    }
+
+    private static decimal ResolveComisionPorPerfil(
+        int productoId,
+        int perfilId,
+        DateTime fecha,
+        IReadOnlyCollection<ProductoComision> comisiones)
+    {
+        if (perfilId <= 0)
+        {
+            return 0;
+        }
+
+        var fechaVenta = fecha.Date;
+        return comisiones
+            .Where(x => x.ProductoId == productoId && x.PerfilId == perfilId)
             .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
             .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
             .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
@@ -463,7 +642,11 @@ public class ReportesController : ControllerBase
 
     private async Task<LotePago> GetOrCreateComisionesLoteAsync(ReporteComisionesDto report, int? vendedorId, string? scope)
     {
-        var scopeFilePart = IsExternalCommissionsScope(scope) ? "externos-team-leaders" : "vendedores";
+        var scopeFilePart = IsExternalCommissionsScope(scope)
+            ? "externos-team-leaders"
+            : IsTeamLeaderCommissionsScope(scope)
+                ? "team-leaders"
+                : "vendedores";
         var existing = await _context.LotesPago
             .AsNoTracking()
             .Where(x => x.TipoPago == TipoPagoComisiones)
@@ -676,6 +859,15 @@ public class ReportesController : ControllerBase
         return int.TryParse(value, out var userId) ? userId : null;
     }
 
+    private async Task<int> ProfileIdAsync(string profileName)
+    {
+        return await _context.Perfiles
+            .AsNoTracking()
+            .Where(x => x.Estado && x.Nombre == profileName)
+            .Select(x => x.Id)
+            .FirstOrDefaultAsync();
+    }
+
     private static LotePagoDto ToLotePagoDto(LotePago lote)
     {
         return new LotePagoDto(
@@ -880,7 +1072,7 @@ public class ReportesController : ControllerBase
         private const decimal BorderG = 0.82m;
         private const decimal BorderB = 0.88m;
 
-        public static byte[] Build(ReporteComisionesDto report, string? webRootPath)
+        public static byte[] Build(ReporteComisionesDto report, string? webRootPath, bool isTeamLeaderReport = false)
         {
             var pages = new List<string>();
             var logo = PdfPngImage.TryLoad(GetLogoPath(webRootPath));
@@ -888,7 +1080,7 @@ public class ReportesController : ControllerBase
             foreach (var seller in report.Vendedores.DefaultIfEmpty(new ReporteComisionVendedorDto(0, "Sin ventas", 0, 0, 0, Array.Empty<ReporteComisionDetalleDto>())))
             {
                 var writer = new PdfPageWriter();
-                DrawSellerReport(writer, report, seller, logo);
+                DrawSellerReport(writer, report, seller, logo, isTeamLeaderReport);
                 pages.AddRange(writer.Pages);
             }
 
@@ -906,7 +1098,7 @@ public class ReportesController : ControllerBase
                 : Path.Combine(AppContext.BaseDirectory, "wwwroot", "assets", "report-logo.png");
         }
 
-        private static void DrawSellerReport(PdfPageWriter writer, ReporteComisionesDto report, ReporteComisionVendedorDto seller, PdfPngImage? logo)
+        private static void DrawSellerReport(PdfPageWriter writer, ReporteComisionesDto report, ReporteComisionVendedorDto seller, PdfPngImage? logo, bool isTeamLeaderReport)
         {
             var y = PageHeight - 32;
             if (logo is not null)
@@ -916,10 +1108,10 @@ public class ReportesController : ControllerBase
                 writer.Image("Im1", MarginX, y - logoHeight, logoWidth, logoHeight);
             }
 
-            writer.TextCenter(PageWidth / 2, y - 28, "REPORTE DE COMISIONES POR VENDEDOR", 17, bold: true, TealR, TealG, TealB);
+            writer.TextCenter(PageWidth / 2, y - 28, isTeamLeaderReport ? "REPORTE DE COMISIONES TEAM LEADER" : "REPORTE DE COMISIONES POR VENDEDOR", 17, bold: true, TealR, TealG, TealB);
 
             y -= 58;
-            DrawSummaryTable(writer, y, report, seller);
+            DrawSummaryTable(writer, y, report, seller, isTeamLeaderReport);
             y -= 66;
 
             var groups = seller.Detalles
@@ -942,19 +1134,19 @@ public class ReportesController : ControllerBase
                     y = PageHeight - 58;
                 }
 
-                y = DrawProductGroup(writer, y, group.Key.Producto, group.Key.ComisionUnitario, group);
+                y = DrawProductGroup(writer, y, group.Key.Producto, group.Key.ComisionUnitario, group, isTeamLeaderReport);
                 y -= 20;
             }
         }
 
-        private static void DrawSummaryTable(PdfPageWriter writer, decimal yTop, ReporteComisionesDto report, ReporteComisionVendedorDto seller)
+        private static void DrawSummaryTable(PdfPageWriter writer, decimal yTop, ReporteComisionesDto report, ReporteComisionVendedorDto seller, bool isTeamLeaderReport)
         {
             var x = MarginX;
             var totalWidth = PageWidth - MarginX * 2;
             var colWidth = totalWidth / 4;
             var headerHeight = 24;
             var valueHeight = 28;
-            var headers = new[] { "Vendedor", "Rango de fecha", "Total vendido", "Total comision" };
+            var headers = new[] { isTeamLeaderReport ? "Team Leader" : "Vendedor", "Rango de fecha", "Total vendido", "Total comision" };
             var values = new[]
             {
                 Trim(seller.Vendedor, 30),
@@ -975,47 +1167,80 @@ public class ReportesController : ControllerBase
             decimal y,
             string product,
             decimal commissionUnit,
-            IGrouping<dynamic, ReporteComisionDetalleDto> group)
+            IGrouping<dynamic, ReporteComisionDetalleDto> group,
+            bool isTeamLeaderReport)
         {
             writer.Text(MarginX, y, $"Detalle por maquina: {Trim(product, 20)}", 10, bold: true, 0.05m, 0.28m, 0.48m);
             writer.Text(MarginX + 166, y, "|", 10, bold: false, 0, 0, 0);
             writer.Text(MarginX + 180, y, $"Comision x metro: {Money(commissionUnit)}", 8, bold: false, 0, 0, 0);
 
             y -= 8;
-            var widths = new[] { 62m, 62m, 205m, 82m, 82m, 80m, 88m, 101m };
-            var headers = new[] { "Fecha", "Cantidad", "Cliente", "Precio x Metro", "Total vendido", "Comision", "Cobro adicional", "Total comision" };
+            var widths = isTeamLeaderReport
+                ? new[] { 58m, 56m, 132m, 145m, 74m, 76m, 74m, 74m, 73m }
+                : new[] { 62m, 62m, 205m, 82m, 82m, 80m, 88m, 101m };
+            var headers = isTeamLeaderReport
+                ? new[] { "Fecha", "Cantidad", "Vendedor", "Cliente", "Precio x Metro", "Total vendido", "Comision", "Cobro adicional", "Total comision" }
+                : new[] { "Fecha", "Cantidad", "Cliente", "Precio x Metro", "Total vendido", "Comision", "Cobro adicional", "Total comision" };
             DrawRow(writer, y, widths, headers, isHeader: true);
             y -= 13;
 
             foreach (var detail in group.OrderBy(x => x.Fecha).ThenBy(x => x.Cliente))
             {
                 var comisionProducto = detail.Cantidad * detail.ComisionUnitario;
-                DrawRow(writer, y, widths, new[]
-                {
-                    detail.Fecha.ToString("dd/MM/yyyy"),
-                    Quantity(detail.Cantidad),
-                    Trim(detail.Cliente, 34),
-                    Number(detail.PrecioUnitario),
-                    Number(detail.TotalDetalle),
-                    Number(comisionProducto),
-                    Number(detail.PrecioExtra),
-                    Number(detail.ComisionTotal)
-                });
+                var values = isTeamLeaderReport
+                    ? new[]
+                    {
+                        detail.Fecha.ToString("dd/MM/yyyy"),
+                        Quantity(detail.Cantidad),
+                        Trim(detail.VendedorOrigen ?? "-", 20),
+                        Trim(detail.Cliente, 24),
+                        Number(detail.PrecioUnitario),
+                        Number(detail.TotalDetalle),
+                        Number(comisionProducto),
+                        Number(detail.PrecioExtra),
+                        Number(detail.ComisionTotal)
+                    }
+                    : new[]
+                    {
+                        detail.Fecha.ToString("dd/MM/yyyy"),
+                        Quantity(detail.Cantidad),
+                        Trim(detail.Cliente, 34),
+                        Number(detail.PrecioUnitario),
+                        Number(detail.TotalDetalle),
+                        Number(comisionProducto),
+                        Number(detail.PrecioExtra),
+                        Number(detail.ComisionTotal)
+                    };
+                DrawRow(writer, y, widths, values);
                 y -= 13;
             }
 
             var subtotalComisionProducto = group.Sum(x => x.Cantidad * x.ComisionUnitario);
-            DrawRow(writer, y, widths, new[]
-            {
-                "Subtotal",
-                Quantity(group.Sum(x => x.Cantidad)),
-                string.Empty,
-                string.Empty,
-                Number(group.Sum(x => x.TotalDetalle)),
-                Number(subtotalComisionProducto),
-                Number(group.Sum(x => x.PrecioExtra)),
-                Number(group.Sum(x => x.ComisionTotal))
-            }, isSubtotal: true);
+            var subtotalValues = isTeamLeaderReport
+                ? new[]
+                {
+                    "Subtotal",
+                    Quantity(group.Sum(x => x.Cantidad)),
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    Number(group.Sum(x => x.TotalDetalle)),
+                    Number(subtotalComisionProducto),
+                    Number(group.Sum(x => x.PrecioExtra)),
+                    Number(group.Sum(x => x.ComisionTotal))
+                }
+                : new[]
+                {
+                    "Subtotal",
+                    Quantity(group.Sum(x => x.Cantidad)),
+                    string.Empty,
+                    string.Empty,
+                    Number(group.Sum(x => x.TotalDetalle)),
+                    Number(subtotalComisionProducto),
+                    Number(group.Sum(x => x.PrecioExtra)),
+                    Number(group.Sum(x => x.ComisionTotal))
+                };
+            DrawRow(writer, y, widths, subtotalValues, isSubtotal: true);
 
             return y - 13;
         }
@@ -1032,7 +1257,9 @@ public class ReportesController : ControllerBase
                         : (0.98m, 0.99m, 1.00m);
                 var text = isHeader ? (1m, 1m, 1m) : (0m, 0m, 0m);
                 var center = isHeader || i == 0;
-                var right = !isHeader && i is 1 or 3 or 4 or 5 or 6 or 7;
+                var right = !isHeader && (widths.Count == 9
+                    ? i is 1 or 4 or 5 or 6 or 7 or 8
+                    : i is 1 or 3 or 4 or 5 or 6 or 7);
 
                 writer.Cell(x, y, widths[i], 13, values[i], isHeader ? 7 : 8, bold: isHeader || isSubtotal, center: center, right: right, fill: fill, text: text);
                 x += widths[i];
