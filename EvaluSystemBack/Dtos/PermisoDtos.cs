@@ -9,7 +9,9 @@ public record FormularioDto(
     string? Ruta,
     string? Icono,
     int Orden,
-    bool Estado);
+    bool Estado,
+    int? FormularioPadreId,
+    string? FormularioPadre);
 
 public record FormularioRequest(
     [Required] string Nombre,
@@ -17,7 +19,8 @@ public record FormularioRequest(
     string? Ruta,
     string? Icono,
     int Orden,
-    bool Estado);
+    bool Estado,
+    int? FormularioPadreId = null);
 
 public record PerfilFormularioPermisoDto(
     int Id,
@@ -29,6 +32,8 @@ public record PerfilFormularioPermisoDto(
     string? Ruta,
     string? Icono,
     int Orden,
+    int? FormularioPadreId,
+    string? FormularioPadre,
     bool PuedeVer,
     bool PuedeCrear,
     bool PuedeEditar,

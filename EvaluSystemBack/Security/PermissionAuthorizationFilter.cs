@@ -62,8 +62,14 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        if (context.ActionDescriptor is not ControllerActionDescriptor descriptor ||
-            !ControllerFormularioMap.TryGetValue(descriptor.ControllerName, out var formulario))
+        if (context.ActionDescriptor is not ControllerActionDescriptor descriptor)
+        {
+            context.Result = new ForbidResult();
+            return;
+        }
+
+        var formulario = ResolveFormulario(descriptor, context.HttpContext.Request);
+        if (string.IsNullOrWhiteSpace(formulario))
         {
             context.Result = new ForbidResult();
             return;
@@ -106,6 +112,43 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
             "PATCH" => "editar",
             "DELETE" => "eliminar",
             _ => null
+        };
+    }
+
+    private static string? ResolveFormulario(ControllerActionDescriptor descriptor, HttpRequest request)
+    {
+        if (!descriptor.ControllerName.Equals("Reportes", StringComparison.OrdinalIgnoreCase))
+        {
+            return ControllerFormularioMap.TryGetValue(descriptor.ControllerName, out var formulario)
+                ? formulario
+                : null;
+        }
+
+        return descriptor.ActionName switch
+        {
+            "GetComisionesVendedores" or "ExportComisionesExcel" or "ExportComisionesPdf" or "ExportComisionesBancoTxt"
+                => ReporteComisionesFormulario(request),
+            "GetLotesPago" or "DownloadLotePagoTxt" or "UpdateLotePagoEstado"
+                => "Reporte de pagos generados",
+            "GetReporteEnvios"
+                => "Reporte de envio de pedidos",
+            "GetResumenGerencial"
+                => "Reporte resumen gerencial",
+            _ => "Reportes"
+        };
+    }
+
+    private static string ReporteComisionesFormulario(HttpRequest request)
+    {
+        var scope = request.Query.TryGetValue("scope", out var value)
+            ? value.ToString()
+            : string.Empty;
+
+        return scope.ToLowerInvariant() switch
+        {
+            "externos" => "Reporte de comisiones de vendedores externos",
+            "team-leaders" => "Reporte de comisiones de Team Leader",
+            _ => "Reporte de comisiones por vendedor"
         };
     }
 }

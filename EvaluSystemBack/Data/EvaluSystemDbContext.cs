@@ -167,6 +167,8 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Icono).HasColumnName("icono").HasMaxLength(100);
             entity.Property(e => e.Orden).HasColumnName("orden");
             entity.Property(e => e.Estado).HasColumnName("estado");
+            entity.Property(e => e.FormularioPadreId).HasColumnName("formulario_padre_id");
+            entity.HasOne(e => e.FormularioPadre).WithMany(e => e.FormulariosHijos).HasForeignKey(e => e.FormularioPadreId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<GrupoVenta>(entity =>

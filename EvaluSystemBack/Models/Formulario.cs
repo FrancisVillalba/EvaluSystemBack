@@ -9,6 +9,9 @@ public class Formulario
     public string? Icono { get; set; }
     public int Orden { get; set; }
     public bool Estado { get; set; }
+    public int? FormularioPadreId { get; set; }
 
+    public Formulario? FormularioPadre { get; set; }
+    public ICollection<Formulario> FormulariosHijos { get; set; } = new List<Formulario>();
     public ICollection<PerfilFormularioPermiso> PerfilPermisos { get; set; } = new List<PerfilFormularioPermiso>();
 }

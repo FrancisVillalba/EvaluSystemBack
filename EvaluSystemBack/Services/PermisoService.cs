@@ -27,6 +27,7 @@ public class PermisoService : IPermisoService
         var permisos = await _context.PerfilFormularioPermisos
             .Include(x => x.Perfil)
             .Include(x => x.Formulario)
+            .ThenInclude(x => x!.FormularioPadre)
             .AsNoTracking()
             .Where(x => perfilIds.Contains(x.PerfilId) && x.Formulario != null && x.Formulario.Estado && x.PuedeVer)
             .GroupBy(x => x.FormularioId)
@@ -41,6 +42,7 @@ public class PermisoService : IPermisoService
             .ToListAsync();
 
         var formularios = await _context.Formularios
+            .Include(x => x.FormularioPadre)
             .AsNoTracking()
             .Where(x => permisos.Select(p => p.FormularioId).Contains(x.Id))
             .OrderBy(x => x.Orden)
@@ -60,6 +62,8 @@ public class PermisoService : IPermisoService
                 form.Ruta,
                 form.Icono,
                 form.Orden,
+                form.FormularioPadreId,
+                form.FormularioPadre?.Nombre,
                 permiso.PuedeVer,
                 permiso.PuedeCrear,
                 permiso.PuedeEditar,
@@ -83,6 +87,7 @@ public class PermisoService : IPermisoService
         var permisos = await _context.PerfilFormularioPermisos
             .Include(x => x.Perfil)
             .Include(x => x.Formulario)
+            .ThenInclude(x => x!.FormularioPadre)
             .AsNoTracking()
             .Where(x => x.PerfilId == perfilId && x.Formulario != null && x.Formulario.Estado && x.PuedeVer)
             .OrderBy(x => x.Formulario!.Orden)
@@ -129,6 +134,7 @@ public class PermisoService : IPermisoService
     public async Task<IEnumerable<FormularioDto>> GetFormulariosAsync()
     {
         var formularios = await _context.Formularios
+            .Include(x => x.FormularioPadre)
             .AsNoTracking()
             .OrderBy(x => x.Orden)
             .ThenBy(x => x.Nombre)
@@ -152,6 +158,7 @@ public class PermisoService : IPermisoService
         formulario.Icono = request.Icono;
         formulario.Orden = request.Orden;
         formulario.Estado = request.Estado;
+        formulario.FormularioPadreId = request.FormularioPadreId;
 
         await _context.SaveChangesAsync();
         return ToDto(formulario);
@@ -162,6 +169,7 @@ public class PermisoService : IPermisoService
         var permiso = await _context.PerfilFormularioPermisos
             .Include(x => x.Perfil)
             .Include(x => x.Formulario)
+            .ThenInclude(x => x!.FormularioPadre)
             .FirstOrDefaultAsync(x => x.PerfilId == request.PerfilId && x.FormularioId == request.FormularioId);
 
         if (permiso is null)
@@ -183,13 +191,26 @@ public class PermisoService : IPermisoService
 
         await _context.Entry(permiso).Reference(x => x.Perfil).LoadAsync();
         await _context.Entry(permiso).Reference(x => x.Formulario).LoadAsync();
+        if (permiso.Formulario is not null)
+        {
+            await _context.Entry(permiso.Formulario).Reference(x => x.FormularioPadre).LoadAsync();
+        }
 
         return ToDto(permiso);
     }
 
     private static FormularioDto ToDto(Formulario entity)
     {
-        return new FormularioDto(entity.Id, entity.Nombre, entity.Descripcion, entity.Ruta, entity.Icono, entity.Orden, entity.Estado);
+        return new FormularioDto(
+            entity.Id,
+            entity.Nombre,
+            entity.Descripcion,
+            entity.Ruta,
+            entity.Icono,
+            entity.Orden,
+            entity.Estado,
+            entity.FormularioPadreId,
+            entity.FormularioPadre?.Nombre);
     }
 
     private static PerfilFormularioPermisoDto ToDto(PerfilFormularioPermiso entity)
@@ -204,6 +225,8 @@ public class PermisoService : IPermisoService
             entity.Formulario?.Ruta,
             entity.Formulario?.Icono,
             entity.Formulario?.Orden ?? 0,
+            entity.Formulario?.FormularioPadreId,
+            entity.Formulario?.FormularioPadre?.Nombre,
             entity.PuedeVer,
             entity.PuedeCrear,
             entity.PuedeEditar,

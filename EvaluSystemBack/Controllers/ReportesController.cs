@@ -99,8 +99,20 @@ public class ReportesController : ControllerBase
     }
 
     [HttpGet("lotes-pago")]
-    public async Task<ActionResult<IEnumerable<LotePagoDto>>> GetLotesPago([FromQuery] string? tipoPago = null)
+    public async Task<ActionResult<PagedResponse<LotePagoDto>>> GetLotesPago(
+        [FromQuery] string? tipoPago = null,
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] string? estado = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var effectiveFrom = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
+        var effectiveToExclusive = (dateTo ?? DateTime.Today).Date.AddDays(1);
+        var normalizedEstado = string.IsNullOrWhiteSpace(estado) ? null : NormalizeLoteEstado(estado);
+
         var query = _context.LotesPago
             .Include(x => x.UsuarioGenero).ThenInclude(x => x!.Persona)
             .Include(x => x.Vendedor).ThenInclude(x => x!.Persona)
@@ -111,12 +123,28 @@ public class ReportesController : ControllerBase
             query = query.Where(x => x.TipoPago == tipoPago);
         }
 
+        query = query.Where(x => x.FechaGeneracion >= effectiveFrom && x.FechaGeneracion < effectiveToExclusive);
+
+        if (!string.IsNullOrWhiteSpace(normalizedEstado))
+        {
+            query = query.Where(x => x.Estado == normalizedEstado);
+        }
+
+        var totalItems = await query.CountAsync();
+        var totalPages = Math.Max((int)Math.Ceiling(totalItems / (double)pageSize), 1);
+        page = Math.Min(page, totalPages);
         var lotes = await query
             .OrderByDescending(x => x.FechaGeneracion)
-            .Take(100)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
-        return Ok(lotes.Select(ToLotePagoDto));
+        return Ok(new PagedResponse<LotePagoDto>(
+            lotes.Select(ToLotePagoDto),
+            page,
+            pageSize,
+            totalItems,
+            totalPages));
     }
 
     [HttpGet("lotes-pago/{id:int}/txt")]
