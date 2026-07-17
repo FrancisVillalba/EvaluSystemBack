@@ -1,4 +1,4 @@
-## Visual Studio
+﻿## Visual Studio
 .vs/
 .vscode/
 .idea/
@@ -30,7 +30,6 @@ coverage/
 *.coveragexml
 
 ## ASP.NET / local configuration
-appsettings.Development.json
 appsettings.Local.json
 appsettings.*.local.json
 appsettings.*.Local.json
