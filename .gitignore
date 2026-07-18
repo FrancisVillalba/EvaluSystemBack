@@ -1,4 +1,4 @@
-﻿## Visual Studio
+## Visual Studio
 .vs/
 .vscode/
 .idea/
@@ -33,6 +33,7 @@ coverage/
 appsettings.Local.json
 appsettings.*.local.json
 appsettings.*.Local.json
+**/Properties/PublishProfiles/*.pubxml
 .env
 .env.*
 !.env.example
