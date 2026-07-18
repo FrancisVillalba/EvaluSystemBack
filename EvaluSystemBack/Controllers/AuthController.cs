@@ -23,4 +23,14 @@ public class AuthController : ControllerBase
         var response = await _authService.LoginAsync(request);
         return response is null ? Unauthorized(new { message = "Usuario o contraseña incorrectos." }) : Ok(response);
     }
+
+    [AllowAnonymous]
+    [HttpPost("refresh")]
+    public async Task<ActionResult<LoginResponse>> Refresh(RefreshTokenRequest request)
+    {
+        var response = await _authService.RefreshAsync(request);
+        return response is null
+            ? Unauthorized(new { message = "La sesión caducó. Inicie sesión nuevamente." })
+            : Ok(response);
+    }
 }
