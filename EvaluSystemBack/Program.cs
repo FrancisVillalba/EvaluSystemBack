@@ -35,6 +35,7 @@ builder.Services.AddScoped<IPermisoService, PermisoService>();
 builder.Services.AddScoped<IPasswordService, PasswordService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IVentaImpresionService, VentaImpresionService>();
+builder.Services.AddScoped<IEstadoVentaFlujoService, EstadoVentaFlujoService>();
 builder.Services.AddScoped<PermissionAuthorizationFilter>();
 builder.Services.Configure<FormOptions>(options =>
 {

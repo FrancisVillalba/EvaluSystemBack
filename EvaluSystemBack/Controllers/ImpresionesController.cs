@@ -15,12 +15,14 @@ public class ImpresionesController : ControllerBase
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
     private readonly IConfiguracionService _configuracionService;
+    private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
 
-    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService)
+    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService, IEstadoVentaFlujoService estadoVentaFlujoService)
     {
         _context = context;
         _permisoService = permisoService;
         _configuracionService = configuracionService;
+        _estadoVentaFlujoService = estadoVentaFlujoService;
     }
 
     [HttpGet]
@@ -161,7 +163,7 @@ public class ImpresionesController : ControllerBase
 
         if (pedidoCompleto)
         {
-            var siguienteEstado = await BuscarSiguienteEstadoVentaAsync(detalle.Cabecera.EstadoVenta, cancellationToken);
+            var siguienteEstado = await _estadoVentaFlujoService.ObtenerSiguienteAsync(detalle.Cabecera.EstadoVenta, cancellationToken);
 
             if (siguienteEstado is not null)
             {
@@ -184,22 +186,6 @@ public class ImpresionesController : ControllerBase
             estadoVenta?.Nombre ?? detalle.Cabecera.EstadoVentaId));
     }
 
-    private async Task<EvaluSystemBack.Models.EstadoVenta?> BuscarSiguienteEstadoVentaAsync(
-        EvaluSystemBack.Models.EstadoVenta? estadoActual,
-        CancellationToken cancellationToken)
-    {
-        if (estadoActual?.NumeroFlujo is null)
-        {
-            return null;
-        }
-
-        return await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.Estado == "A" && x.NumeroFlujo > estadoActual.NumeroFlujo)
-            .OrderBy(x => x.NumeroFlujo)
-            .ThenBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
     private async Task<string> GetBasePathAsync()
     {
         var basePath = await _configuracionService.ObtenerValorAsync("RUTA_DE_ARCHIVOS", 1)

@@ -9,17 +9,15 @@ namespace EvaluSystemBack.Services;
 
 public class VentaImpresionService : IVentaImpresionService
 {
+    private const string EstadoVentaCarga = "PC";
     private const string EstadoVentaInicial = "PI";
+    private const string EstadoVentaLimiteEditable = "PE";
+    private const string EstadoVentaEliminado = "XX";
     private const string EstadoDetalleInicial = "IP";
     private const string EstadoPagoPendiente = "P1";
     private const string EstadoPagoParcial = "P2";
     private const string EstadoPagoPagado = "P3";
-    private const int FlujoCarga = 1;
-    private const int FlujoImpresion = 2;
-    private const int FlujoEnvio = 3;
-    private const int FlujoEnviado = 4;
-    private const int FlujoEliminado = 5;
-    private const int UltimoFlujoEditable = FlujoEnvio;
+
     private const string MetodoEntregaDelivery = "DELIVERY";
     private const string MetodoEntregaTransportadora = "TRANSPORTADORA";
     private const string ConfigMontoEnvioTransportadora = "MONTO_ENVIO_TRANSPORTADORA";
@@ -28,11 +26,16 @@ public class VentaImpresionService : IVentaImpresionService
 
     private readonly EvaluSystemDbContext _context;
     private readonly IConfiguracionService _configuracionService;
+    private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
 
-    public VentaImpresionService(EvaluSystemDbContext context, IConfiguracionService configuracionService)
+    public VentaImpresionService(
+        EvaluSystemDbContext context,
+        IConfiguracionService configuracionService,
+        IEstadoVentaFlujoService estadoVentaFlujoService)
     {
         _context = context;
         _configuracionService = configuracionService;
+        _estadoVentaFlujoService = estadoVentaFlujoService;
     }
 
     public async Task<VentaImpresionCabDto> CrearVentaCompletaAsync(VentaImpresionCompletaRequest request)
@@ -50,6 +53,7 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarEstadoInicialAsync(request.EstadoVentaId);
         await ValidarCabeceraAsync(request, totalVenta.TotalVenta);
         await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
+        var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -59,7 +63,7 @@ public class VentaImpresionService : IVentaImpresionService
             FormaPagoId = request.FormaPagoId,
             TotalVenta = totalVenta.TotalVenta,
             MontoEnvioTransportadora = totalVenta.MontoEnvioTransportadora,
-            EstadoVentaId = string.IsNullOrWhiteSpace(request.EstadoVentaId) ? EstadoVentaInicial : request.EstadoVentaId,
+            EstadoVentaId = estadoVentaId,
             VendedorId = request.VendedorId,
             MontoPagado = request.MontoPagado ?? 0,
             EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId,
@@ -167,12 +171,13 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarVentaEditableAsync(cabecera);
         await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
         await ValidarAdjuntosParaImpresionAsync(cabecera.EstadoVentaId, request.EstadoVentaId, detalles);
+        var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
-        cabecera.EstadoVentaId = string.IsNullOrWhiteSpace(request.EstadoVentaId) ? EstadoVentaInicial : request.EstadoVentaId;
+        cabecera.EstadoVentaId = estadoVentaId;
         cabecera.VendedorId = request.VendedorId;
         cabecera.MontoPagado = request.MontoPagado ?? 0;
         cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
@@ -267,10 +272,11 @@ public class VentaImpresionService : IVentaImpresionService
             request.TotalVenta);
         await ValidarComprobantePagoAsync(request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
         await ValidarAdjuntosParaImpresionAsync(cabecera.EstadoVentaId, request.EstadoVentaId, cabecera.Detalles);
+        var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
 
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
-        cabecera.EstadoVentaId = request.EstadoVentaId;
+        cabecera.EstadoVentaId = estadoVentaId;
         cabecera.VendedorId = request.VendedorId;
         cabecera.MontoPagado = request.MontoPagado ?? 0;
         cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
@@ -310,16 +316,7 @@ public class VentaImpresionService : IVentaImpresionService
 
         await ValidarVentaEliminableAsync(cabecera);
 
-        var estadoEliminado = await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.NumeroFlujo == FlujoEliminado)
-            .OrderBy(x => x.Nombre)
-            .FirstOrDefaultAsync();
-
-        if (estadoEliminado is null)
-        {
-            throw new InvalidOperationException("No se encontro el estado eliminado.");
-        }
+        var estadoEliminado = await ObtenerEstadoVentaActivoAsync(EstadoVentaEliminado, "No se encontro el estado eliminado.");
 
         cabecera.EstadoVentaId = estadoEliminado.Id;
         cabecera.Observacion = request.Observacion.Trim();
@@ -535,11 +532,7 @@ public class VentaImpresionService : IVentaImpresionService
             throw new InvalidOperationException("El vendedor no existe o esta inactivo.");
         }
 
-        var estadoVentaId = string.IsNullOrWhiteSpace(estadoVentaIdRequest) ? EstadoVentaInicial : estadoVentaIdRequest;
-        if (!await _context.EstadosVenta.AnyAsync(x => x.Id == estadoVentaId && x.Estado == "A"))
-        {
-            throw new InvalidOperationException("El estado de venta no existe o esta inactivo.");
-        }
+        await ResolverEstadoVentaIdAsync(estadoVentaIdRequest);
 
         var estadoPagadoId = string.IsNullOrWhiteSpace(estadoPagadoIdRequest) ? EstadoPagoPendiente : estadoPagadoIdRequest;
         if (!await _context.EstadosPago.AnyAsync(x => x.Id == estadoPagadoId && x.Estado == true))
@@ -659,21 +652,10 @@ public class VentaImpresionService : IVentaImpresionService
 
     private async Task ValidarVentaEditableAsync(VentaImpresionCab cabecera)
     {
-        var estado = cabecera.EstadoVenta ?? await _context.EstadosVenta
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == cabecera.EstadoVentaId);
+        var estado = await ObtenerEstadoVentaActivoAsync(cabecera.EstadoVentaId, "El estado de la venta no existe.");
+        var estadoLimiteEditable = await ObtenerEstadoVentaActivoAsync(EstadoVentaLimiteEditable, "No se encontro el estado limite editable.");
 
-        if (estado is null)
-        {
-            throw new InvalidOperationException("El estado de la venta no existe.");
-        }
-
-        if (!string.Equals(estado.Estado, "A", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("El estado actual de la venta esta inactivo.");
-        }
-
-        if ((estado.NumeroFlujo ?? int.MaxValue) > UltimoFlujoEditable)
+        if (!EstadoDentroDelLimite(estado, estadoLimiteEditable))
         {
             throw new InvalidOperationException("La venta ya avanzo de estado y no puede modificarse.");
         }
@@ -681,25 +663,10 @@ public class VentaImpresionService : IVentaImpresionService
 
     private async Task ValidarVentaEliminableAsync(VentaImpresionCab cabecera)
     {
-        var estado = cabecera.EstadoVenta ?? await _context.EstadosVenta
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == cabecera.EstadoVentaId);
+        var estado = await ObtenerEstadoVentaActivoAsync(cabecera.EstadoVentaId, "El estado de la venta no existe.");
+        var estadoCarga = await ObtenerEstadoVentaActivoAsync(EstadoVentaCarga, "No se encontro el estado de carga.");
 
-        if (estado is null)
-        {
-            throw new InvalidOperationException("El estado de la venta no existe.");
-        }
-
-        if (!string.Equals(estado.Estado, "A", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("El estado actual de la venta esta inactivo.");
-        }
-
-        var esCarga = (estado.NumeroFlujo ?? int.MaxValue) == FlujoCarga
-            || string.Equals(estado.Id, EstadoVentaInicial, StringComparison.OrdinalIgnoreCase)
-            || (estado.Nombre?.Contains("Carga", StringComparison.OrdinalIgnoreCase) ?? false);
-
-        if (!esCarga)
+        if (!EsMismoEstado(estado, estadoCarga))
         {
             throw new InvalidOperationException("Solo se puede eliminar un pedido cuando esta en estado Carga.");
         }
@@ -707,41 +674,24 @@ public class VentaImpresionService : IVentaImpresionService
 
     private async Task ValidarTransicionEstadoAsync(string estadoActualId, string? estadoDestinoIdRequest)
     {
-        var estadoDestinoId = string.IsNullOrWhiteSpace(estadoDestinoIdRequest) ? EstadoVentaInicial : estadoDestinoIdRequest;
+        var estadoDestinoId = await ResolverEstadoVentaIdAsync(estadoDestinoIdRequest);
         if (estadoActualId == estadoDestinoId)
         {
             return;
         }
 
-        var estados = await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.Id == estadoActualId || x.Id == estadoDestinoId)
-            .ToListAsync();
+        var actual = await ObtenerEstadoVentaActivoAsync(estadoActualId, "No se pudo validar el flujo de estados.");
+        var destino = await ObtenerEstadoVentaActivoAsync(estadoDestinoId, "No se pudo validar el flujo de estados.");
+        var estadoCarga = await ObtenerEstadoVentaActivoAsync(EstadoVentaCarga, "No se encontro el estado de carga.");
+        var estadoLimiteEditable = await ObtenerEstadoVentaActivoAsync(EstadoVentaLimiteEditable, "No se encontro el estado limite editable.");
 
-        var actual = estados.FirstOrDefault(x => x.Id == estadoActualId);
-        var destino = estados.FirstOrDefault(x => x.Id == estadoDestinoId);
+        var siguiente = await _estadoVentaFlujoService.ObtenerSiguienteAsync(actual, CancellationToken.None);
+        var anterior = await _estadoVentaFlujoService.ObtenerAnteriorAsync(actual.Id, CancellationToken.None);
 
-        if (actual is null || destino is null)
-        {
-            throw new InvalidOperationException("No se pudo validar el flujo de estados.");
-        }
+        var permitidoAvanzarCargaAImpresion = EsMismoEstado(actual, estadoCarga) && EsMismoEstado(siguiente, destino);
+        var permitidoRetroceder = EstadoDentroDelLimite(actual, estadoLimiteEditable) && EsMismoEstado(anterior, destino);
 
-        var flujoActual = actual.NumeroFlujo;
-        var flujoDestino = destino.NumeroFlujo;
-
-        var permitido = (flujoActual, flujoDestino) switch
-        {
-            (FlujoCarga, FlujoImpresion) => true,
-            _ => false
-        };
-
-        permitido = permitido || (
-            flujoActual.HasValue
-            && flujoDestino.HasValue
-            && flujoActual.Value <= UltimoFlujoEditable
-            && flujoDestino.Value == flujoActual.Value - 1);
-
-        if (!permitido)
+        if (!permitidoAvanzarCargaAImpresion && !permitidoRetroceder)
         {
             throw new InvalidOperationException("Desde pedidos solo se puede avanzar de Carga a Impresion o devolver una venta al estado anterior.");
         }
@@ -794,21 +744,18 @@ public class VentaImpresionService : IVentaImpresionService
 
     private async Task<bool> EsTransicionCargaAImpresionAsync(string estadoActualId, string? estadoDestinoIdRequest)
     {
-        var estadoDestinoId = string.IsNullOrWhiteSpace(estadoDestinoIdRequest) ? EstadoVentaInicial : estadoDestinoIdRequest;
+        var estadoDestinoId = await ResolverEstadoVentaIdAsync(estadoDestinoIdRequest);
         if (estadoActualId == estadoDestinoId)
         {
             return false;
         }
 
-        var estados = await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.Id == estadoActualId || x.Id == estadoDestinoId)
-            .ToListAsync();
+        var actual = await ObtenerEstadoVentaActivoAsync(estadoActualId, "No se pudo validar el flujo de estados.");
+        var destino = await ObtenerEstadoVentaActivoAsync(estadoDestinoId, "No se pudo validar el flujo de estados.");
+        var estadoCarga = await ObtenerEstadoVentaActivoAsync(EstadoVentaCarga, "No se encontro el estado de carga.");
+        var siguiente = await _estadoVentaFlujoService.ObtenerSiguienteAsync(actual, CancellationToken.None);
 
-        var actual = estados.FirstOrDefault(x => x.Id == estadoActualId);
-        var destino = estados.FirstOrDefault(x => x.Id == estadoDestinoId);
-
-        return actual?.NumeroFlujo == FlujoCarga && destino?.NumeroFlujo == FlujoImpresion;
+        return EsMismoEstado(actual, estadoCarga) && EsMismoEstado(siguiente, destino);
     }
 
     private async Task ValidarEstadoInicialAsync(string? estadoVentaIdRequest)
@@ -818,19 +765,48 @@ public class VentaImpresionService : IVentaImpresionService
             return;
         }
 
-        var estado = await _context.EstadosVenta
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == estadoVentaIdRequest);
+        var estado = await ObtenerEstadoVentaActivoAsync(estadoVentaIdRequest, "El estado inicial de venta no existe o esta inactivo.");
+        var estadoCarga = await ObtenerEstadoVentaActivoAsync(EstadoVentaCarga, "No se encontro el estado de carga.");
 
-        if (estado is null || !string.Equals(estado.Estado, "A", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("El estado inicial de venta no existe o esta inactivo.");
-        }
-
-        if (estado.NumeroFlujo != FlujoCarga)
+        if (!EsMismoEstado(estado, estadoCarga))
         {
             throw new InvalidOperationException("Una venta nueva debe iniciar en estado de carga.");
         }
+    }
+
+    private async Task<string> ResolverEstadoVentaIdAsync(string? estadoVentaIdRequest)
+    {
+        var estadoVentaId = string.IsNullOrWhiteSpace(estadoVentaIdRequest)
+            ? EstadoVentaInicial
+            : estadoVentaIdRequest.Trim();
+
+        var estado = await ObtenerEstadoVentaActivoAsync(estadoVentaId, "El estado de venta no existe o esta inactivo.");
+        return estado.Id;
+    }
+
+    private async Task<EstadoVenta> ObtenerEstadoVentaActivoAsync(string estadoVentaId, string mensajeError)
+    {
+        var estado = await _estadoVentaFlujoService.ObtenerPorIdAsync(estadoVentaId, CancellationToken.None);
+        if (estado is null)
+        {
+            throw new InvalidOperationException(mensajeError);
+        }
+
+        return estado;
+    }
+
+    private static bool EsMismoEstado(EstadoVenta? primero, EstadoVenta? segundo)
+    {
+        return primero is not null
+            && segundo is not null
+            && string.Equals(primero.Id, segundo.Id, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool EstadoDentroDelLimite(EstadoVenta estado, EstadoVenta limite)
+    {
+        return estado.NumeroFlujo.HasValue
+            && limite.NumeroFlujo.HasValue
+            && estado.NumeroFlujo.Value <= limite.NumeroFlujo.Value;
     }
 
     private bool EsActualizacionSoloPago(

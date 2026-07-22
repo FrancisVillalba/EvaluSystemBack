@@ -15,11 +15,13 @@ public class ControlController : ControllerBase
 
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
+    private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
 
-    public ControlController(EvaluSystemDbContext context, IPermisoService permisoService)
+    public ControlController(EvaluSystemDbContext context, IPermisoService permisoService, IEstadoVentaFlujoService estadoVentaFlujoService)
     {
         _context = context;
         _permisoService = permisoService;
+        _estadoVentaFlujoService = estadoVentaFlujoService;
     }
 
     [HttpGet]
@@ -30,7 +32,7 @@ public class ControlController : ControllerBase
             return Forbid();
         }
 
-        var estadoControl = await BuscarEstadoEntreAsync("IM", "PE", cancellationToken);
+        var estadoControl = await _estadoVentaFlujoService.ObtenerPorIdAsync("CO", cancellationToken);
         if (estadoControl is null)
         {
             return Ok(Array.Empty<ControlPedidoDto>());
@@ -63,13 +65,13 @@ public class ControlController : ControllerBase
             return NotFound(new { message = "No se encontro el pedido." });
         }
 
-        var estadoControl = await BuscarEstadoEntreAsync("IM", "PE", cancellationToken);
+        var estadoControl = await _estadoVentaFlujoService.ObtenerPorIdAsync("CO", cancellationToken);
         if (estadoControl is not null && pedido.EstadoVentaId != estadoControl.Id)
         {
             return BadRequest(new { message = "El pedido no esta en control." });
         }
 
-        var siguienteEstado = await BuscarSiguienteEstadoVentaAsync(pedido.EstadoVenta, cancellationToken);
+        var siguienteEstado = await _estadoVentaFlujoService.ObtenerSiguienteAsync(pedido.EstadoVenta, cancellationToken);
         if (siguienteEstado is null)
         {
             return BadRequest(new { message = "No existe un siguiente estado de venta configurado." });
@@ -104,44 +106,6 @@ public class ControlController : ControllerBase
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
     }
 
-    private async Task<EstadoVenta?> BuscarEstadoEntreAsync(string estadoAnteriorId, string estadoSiguienteId, CancellationToken cancellationToken)
-    {
-        var estadoAnterior = await _context.EstadosVenta
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == estadoAnteriorId && x.Estado == "A", cancellationToken);
-        var estadoSiguiente = await _context.EstadosVenta
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == estadoSiguienteId && x.Estado == "A", cancellationToken);
-
-        if (estadoAnterior?.NumeroFlujo is null || estadoSiguiente?.NumeroFlujo is null)
-        {
-            return null;
-        }
-
-        return await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.Estado == "A" &&
-                x.NumeroFlujo > estadoAnterior.NumeroFlujo &&
-                x.NumeroFlujo < estadoSiguiente.NumeroFlujo)
-            .OrderBy(x => x.NumeroFlujo)
-            .ThenBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
-
-    private async Task<EstadoVenta?> BuscarSiguienteEstadoVentaAsync(EstadoVenta? estadoActual, CancellationToken cancellationToken)
-    {
-        if (estadoActual?.NumeroFlujo is null)
-        {
-            return null;
-        }
-
-        return await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.Estado == "A" && x.NumeroFlujo > estadoActual.NumeroFlujo)
-            .OrderBy(x => x.NumeroFlujo)
-            .ThenBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
     private async Task<bool> TienePermisoAsync(string accion)
     {
         var userId = CurrentUserId();

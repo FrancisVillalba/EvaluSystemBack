@@ -4,6 +4,7 @@ using System.Text;
 using EvaluSystemBack.Data;
 using EvaluSystemBack.Dtos;
 using EvaluSystemBack.Models;
+using EvaluSystemBack.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -20,10 +21,12 @@ public class DeliveryController : ControllerBase
     private const string EstadoRutaAbierto = "Abierto";
     private const string EstadoRutaCerrado = "Cerrado";
     private readonly EvaluSystemDbContext _context;
+    private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
 
-    public DeliveryController(EvaluSystemDbContext context)
+    public DeliveryController(EvaluSystemDbContext context, IEstadoVentaFlujoService estadoVentaFlujoService)
     {
         _context = context;
+        _estadoVentaFlujoService = estadoVentaFlujoService;
     }
 
     [HttpGet("disponibles")]
@@ -456,9 +459,7 @@ public class DeliveryController : ControllerBase
             return BadRequest(new { message = "No se puede quitar un pedido que ya pertenece a un lote." });
         }
 
-        var estadoPendienteEnvio = await _context.EstadosVenta
-            .Where(x => x.Id == "PE" && x.Estado == "A")
-            .FirstOrDefaultAsync(cancellationToken);
+        var estadoPendienteEnvio = await _estadoVentaFlujoService.ObtenerPorIdAsync("PE", cancellationToken);
 
         if (estadoPendienteEnvio is null)
         {
@@ -505,7 +506,7 @@ public class DeliveryController : ControllerBase
 
     private async Task MarkAsSentAsync(VentaImpresionCab pedido, int userId, CancellationToken cancellationToken)
     {
-        var estadoEnviado = await BuscarSiguienteEstadoVentaAsync(pedido.EstadoVenta, cancellationToken);
+        var estadoEnviado = await _estadoVentaFlujoService.ObtenerSiguienteAsync(pedido.EstadoVenta, cancellationToken);
 
         if (estadoEnviado is null)
         {
@@ -593,20 +594,6 @@ public class DeliveryController : ControllerBase
         return query;
     }
 
-    private async Task<EstadoVenta?> BuscarSiguienteEstadoVentaAsync(EstadoVenta? estadoActual, CancellationToken cancellationToken)
-    {
-        if (estadoActual?.NumeroFlujo is null)
-        {
-            return null;
-        }
-
-        return await _context.EstadosVenta
-            .AsNoTracking()
-            .Where(x => x.Estado == "A" && x.NumeroFlujo > estadoActual.NumeroFlujo)
-            .OrderBy(x => x.NumeroFlujo)
-            .ThenBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
     private IQueryable<VentaImpresionCab> Query()
     {
         return _context.VentasImpresionCab
