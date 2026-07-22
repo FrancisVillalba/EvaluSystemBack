@@ -71,7 +71,8 @@ public class VentaImpresionService : IVentaImpresionService
             ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago),
             ComprobantePagoNombre = request.ComprobantePagoNombre,
             Observacion = request.Observacion,
-            MetodoEntrega = metodoEntrega
+            MetodoEntrega = metodoEntrega,
+            Reposicion = request.Reposicion
         };
 
         _context.VentasImpresionCab.Add(cabecera);
@@ -185,6 +186,7 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
         cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
         cabecera.Observacion = request.Observacion;
+        cabecera.Reposicion = request.Reposicion;
         SetMetodoEntrega(cabecera, metodoEntrega);
         cabecera.TotalVenta = totalVenta.TotalVenta;
         cabecera.MontoEnvioTransportadora = totalVenta.MontoEnvioTransportadora;
@@ -823,6 +825,7 @@ public class VentaImpresionService : IVentaImpresionService
             && ValoresIguales(cabecera.EstadoVentaId, estadoVentaId)
             && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
             && ValoresIguales(cabecera.Observacion, request.Observacion)
+            && cabecera.Reposicion == request.Reposicion
             && ValoresIguales(cabecera.MetodoEntrega, NormalizeMetodoEntrega(request.MetodoEntrega))
             && DetallesIguales(cabecera.Detalles, detallesRequest);
     }
@@ -835,6 +838,7 @@ public class VentaImpresionService : IVentaImpresionService
             && ValoresIguales(cabecera.EstadoVentaId, request.EstadoVentaId)
             && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
             && ValoresIguales(cabecera.Observacion, request.Observacion)
+            && cabecera.Reposicion == request.Reposicion
             && ValoresIguales(cabecera.MetodoEntrega, NormalizeMetodoEntrega(request.MetodoEntrega));
     }
 

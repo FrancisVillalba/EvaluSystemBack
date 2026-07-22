@@ -16,6 +16,7 @@ public class VentaImpresionCab
     public string? ComprobantePagoNombre { get; set; }
     public string? Observacion { get; set; }
     public string? MetodoEntrega { get; set; }
+    public bool Reposicion { get; set; }
     public int? UsuarioEntregaPedidoId { get; set; }
     public DateTime? FechaTomaDelivery { get; set; }
     public DateTime FechaCreacion { get; set; }

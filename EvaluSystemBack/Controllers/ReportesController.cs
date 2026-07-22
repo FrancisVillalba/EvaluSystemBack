@@ -348,6 +348,7 @@ public class ReportesController : ControllerBase
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || scopeTeamLeaders || x.VendedorId == vendedorId.Value)
+            .Where(x => !x.Reposicion)
             .Where(x =>
                 x.EstadoVenta != null &&
                 (x.EstadoVenta.NumeroFlujo == FlujoImpresion ||
@@ -416,7 +417,7 @@ public class ReportesController : ControllerBase
                     continue;
                 }
 
-                foreach (var detalle in venta.Detalles)
+                foreach (var detalle in venta.Detalles.Where(EsDetalleComisionable))
                 {
                     detallesComision.Add((teamLeaderId, BuildComisionDetallePorPerfil(
                         venta,
@@ -432,7 +433,7 @@ public class ReportesController : ControllerBase
         {
             foreach (var venta in ventas)
             {
-                foreach (var detalle in venta.Detalles)
+                foreach (var detalle in venta.Detalles.Where(EsDetalleComisionable))
                 {
                     detallesComision.Add((venta.VendedorId, BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true)));
                 }
@@ -483,6 +484,10 @@ public class ReportesController : ControllerBase
              profile.Contains("ventas", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool EsDetalleComisionable(VentaImpresionDet detalle)
+    {
+        return !string.Equals((detalle.EstadoItem ?? string.Empty).Trim(), "RE", StringComparison.OrdinalIgnoreCase);
+    }
     private static ReporteComisionDetalleDto BuildComisionDetalle(
         VentaImpresionCab venta,
         VentaImpresionDet detalle,

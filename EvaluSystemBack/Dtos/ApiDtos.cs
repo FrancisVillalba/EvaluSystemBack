@@ -259,6 +259,7 @@ public record VentaImpresionCabDto(
     string? ComprobantePagoNombre,
     string? Observacion,
     string? MetodoEntrega,
+    bool Reposicion,
     int? DeliveryUsuarioId,
     string? DeliveryUsuario,
     DateTime? FechaTomaDelivery,
@@ -285,7 +286,8 @@ public record VentaImpresionCabRequest(
     [StringLength(500)]
     string? Observacion,
     [StringLength(30)]
-    string? MetodoEntrega);
+    string? MetodoEntrega,
+    bool Reposicion);
 
 public record EliminarVentaImpresionRequest(
     [Required]
@@ -428,6 +430,7 @@ public record VentaImpresionCompletaRequest(
     string? Observacion,
     [StringLength(30)]
     string? MetodoEntrega,
+    bool Reposicion,
     [StringLength(2)]
     string? EstadoVentaId,
     [Required] IEnumerable<VentaImpresionDetalleCreateRequest> Detalles);
@@ -466,6 +469,7 @@ public record VentaImpresionCompletaUpdateRequest(
     string? Observacion,
     [StringLength(30)]
     string? MetodoEntrega,
+    bool Reposicion,
     [StringLength(2)]
     string? EstadoVentaId,
     [Required] IEnumerable<VentaImpresionDetalleUpdateRequest> Detalles);

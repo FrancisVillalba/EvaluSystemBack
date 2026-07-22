@@ -316,6 +316,7 @@ public static class DtoMapper
             entity.ComprobantePagoNombre,
             entity.Observacion,
             entity.MetodoEntrega,
+            entity.Reposicion,
             entity.UsuarioEntregaPedidoId,
             entity.UsuarioEntregaPedido is null ? null : NombreUsuario(entity.UsuarioEntregaPedido),
             entity.FechaTomaDelivery,
@@ -337,6 +338,7 @@ public static class DtoMapper
         entity.ComprobantePagoNombre = request.ComprobantePagoNombre;
         entity.Observacion = request.Observacion;
         entity.MetodoEntrega = string.IsNullOrWhiteSpace(request.MetodoEntrega) ? "DELIVERY" : request.MetodoEntrega;
+        entity.Reposicion = request.Reposicion;
         return entity;
     }
 
