@@ -292,6 +292,27 @@ public record EliminarVentaImpresionRequest(
     [StringLength(500)]
     string Observacion);
 
+public record ControlPedidoDto(
+    int Id,
+    DateTime FechaCreacion,
+    DateTime? FechaEntrega,
+    string Cliente,
+    string EstadoVentaId,
+    string? EstadoVenta,
+    string? MetodoEntregaId,
+    string? MetodoEntrega,
+    decimal TotalVenta,
+    IEnumerable<ControlPedidoDetalleDto> Detalles);
+
+public record ControlPedidoDetalleDto(
+    int Id,
+    int PedidoId,
+    int TipoMaquinaId,
+    string TipoMaquina,
+    string Producto,
+    decimal Cantidad,
+    string? Observacion,
+    bool Impreso);
 public record DeliveryPedidoDto(
     int Id,
     DateTime FechaCreacion,

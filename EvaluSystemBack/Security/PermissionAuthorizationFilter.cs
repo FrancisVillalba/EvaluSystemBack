@@ -22,6 +22,7 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         ["VentasImpresion"] = "Pedidos",
         ["Impresiones"] = "Impresiones",
         ["Delivery"] = "Envio",
+        ["Control"] = "Control",
         ["Reportes"] = "Reportes",
         ["VentasImpresionCab"] = "Pedidos",
         ["VentasImpresionDet"] = "Pedidos",

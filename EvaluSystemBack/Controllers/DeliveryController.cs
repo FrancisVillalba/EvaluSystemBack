@@ -13,8 +13,6 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class DeliveryController : ControllerBase
 {
-    private const int FlujoEnvio = 3;
-    private const int FlujoEnviado = 4;
     private const string MetodoEntregaDelivery = "DELIVERY";
     private const string MetodoEntregaTransportadora = "TRANSPORTADORA";
     private const string MetodoEntregaMotobolt = "MOTOBOLT";
@@ -34,7 +32,7 @@ public class DeliveryController : ControllerBase
         var pedidos = await Query()
             .Where(x => x.UsuarioEntregaPedidoId == null)
             .Where(x => x.MetodoEntrega == MetodoEntregaDelivery)
-            .Where(x => x.EstadoVenta != null && x.EstadoVenta.NumeroFlujo == FlujoEnvio)
+            .Where(x => x.EstadoVentaId == "PE")
             .OrderBy(x => x.FechaEntrega ?? x.FechaCreacion)
             .ThenBy(x => x.Id)
             .Take(100)
@@ -405,7 +403,7 @@ public class DeliveryController : ControllerBase
             return NotFound(new { message = "No se encontro el pedido." });
         }
 
-        if (pedido.EstadoVenta?.NumeroFlujo != FlujoEnvio)
+        if (pedido.EstadoVentaId != "PE")
         {
             return BadRequest(new { message = "El pedido no esta listo para envio." });
         }
@@ -459,8 +457,7 @@ public class DeliveryController : ControllerBase
         }
 
         var estadoPendienteEnvio = await _context.EstadosVenta
-            .Where(x => x.NumeroFlujo == FlujoEnvio)
-            .OrderBy(x => x.Id)
+            .Where(x => x.Id == "PE" && x.Estado == "A")
             .FirstOrDefaultAsync(cancellationToken);
 
         if (estadoPendienteEnvio is null)
@@ -508,10 +505,7 @@ public class DeliveryController : ControllerBase
 
     private async Task MarkAsSentAsync(VentaImpresionCab pedido, int userId, CancellationToken cancellationToken)
     {
-        var estadoEnviado = await _context.EstadosVenta
-            .Where(x => x.NumeroFlujo == FlujoEnviado)
-            .OrderBy(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var estadoEnviado = await BuscarSiguienteEstadoVentaAsync(pedido.EstadoVenta, cancellationToken);
 
         if (estadoEnviado is null)
         {
@@ -599,6 +593,20 @@ public class DeliveryController : ControllerBase
         return query;
     }
 
+    private async Task<EstadoVenta?> BuscarSiguienteEstadoVentaAsync(EstadoVenta? estadoActual, CancellationToken cancellationToken)
+    {
+        if (estadoActual?.NumeroFlujo is null)
+        {
+            return null;
+        }
+
+        return await _context.EstadosVenta
+            .AsNoTracking()
+            .Where(x => x.Estado == "A" && x.NumeroFlujo > estadoActual.NumeroFlujo)
+            .OrderBy(x => x.NumeroFlujo)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
     private IQueryable<VentaImpresionCab> Query()
     {
         return _context.VentasImpresionCab
@@ -655,7 +663,7 @@ public class DeliveryController : ControllerBase
         return await Query()
             .Where(x => x.MetodoEntrega == method)
             .Where(x => !CanTakeForRoute(method) || x.UsuarioEntregaPedidoId == null)
-            .Where(x => x.EstadoVenta != null && x.EstadoVenta.NumeroFlujo == FlujoEnvio)
+            .Where(x => x.EstadoVentaId == "PE")
             .OrderBy(x => x.FechaEntrega ?? x.FechaCreacion)
             .ThenBy(x => x.Id)
             .Take(200)

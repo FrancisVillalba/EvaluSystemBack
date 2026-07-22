@@ -161,15 +161,11 @@ public class ImpresionesController : ControllerBase
 
         if (pedidoCompleto)
         {
-            var estadoPendienteEnvio = await _context.EstadosVenta
-                .AsNoTracking()
-                .Where(x => x.Estado == "A" && (x.NumeroFlujo == 3 || x.Id == "PE"))
-                .OrderBy(x => x.NumeroFlujo == 3 ? 0 : 1)
-                .FirstOrDefaultAsync(cancellationToken);
+            var siguienteEstado = await BuscarSiguienteEstadoVentaAsync(detalle.Cabecera.EstadoVenta, cancellationToken);
 
-            if (estadoPendienteEnvio is not null)
+            if (siguienteEstado is not null)
             {
-                detalle.Cabecera.EstadoVentaId = estadoPendienteEnvio.Id;
+                detalle.Cabecera.EstadoVentaId = siguienteEstado.Id;
             }
         }
 
@@ -188,6 +184,22 @@ public class ImpresionesController : ControllerBase
             estadoVenta?.Nombre ?? detalle.Cabecera.EstadoVentaId));
     }
 
+    private async Task<EvaluSystemBack.Models.EstadoVenta?> BuscarSiguienteEstadoVentaAsync(
+        EvaluSystemBack.Models.EstadoVenta? estadoActual,
+        CancellationToken cancellationToken)
+    {
+        if (estadoActual?.NumeroFlujo is null)
+        {
+            return null;
+        }
+
+        return await _context.EstadosVenta
+            .AsNoTracking()
+            .Where(x => x.Estado == "A" && x.NumeroFlujo > estadoActual.NumeroFlujo)
+            .OrderBy(x => x.NumeroFlujo)
+            .ThenBy(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
     private async Task<string> GetBasePathAsync()
     {
         var basePath = await _configuracionService.ObtenerValorAsync("RUTA_DE_ARCHIVOS", 1)
