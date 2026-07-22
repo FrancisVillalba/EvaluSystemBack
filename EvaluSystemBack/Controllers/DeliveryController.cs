@@ -20,6 +20,7 @@ public class DeliveryController : ControllerBase
     private const string MetodoEntregaRetiroLocal = "RETIRO_LOCAL";
     private const string EstadoRutaAbierto = "Abierto";
     private const string EstadoRutaCerrado = "Cerrado";
+    private const string EstadoDetalleAprobado = "AP";
     private readonly EvaluSystemDbContext _context;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
 
@@ -758,9 +759,19 @@ public class DeliveryController : ControllerBase
 
     private static string Productos(VentaImpresionCab pedido)
     {
-        return string.Join(", ", pedido.Detalles
+        var detallesAprobados = pedido.Detalles
+            .Where(EsDetalleAprobado)
+            .ToList();
+        var detalles = detallesAprobados.Count > 0 ? detallesAprobados : pedido.Detalles;
+
+        return string.Join(", ", detalles
             .GroupBy(x => x.Producto?.Nombre ?? x.TipoMaquina?.Nombre ?? $"Detalle {x.Id}")
             .Select(x => $"{x.Key} {Cantidad(x.Sum(d => d.Cantidad))}"));
+    }
+
+    private static bool EsDetalleAprobado(VentaImpresionDet detalle)
+    {
+        return string.Equals((detalle.EstadoItem ?? string.Empty).Trim(), EstadoDetalleAprobado, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Cantidad(decimal value)

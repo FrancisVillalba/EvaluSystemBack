@@ -312,6 +312,7 @@ public record ControlPedidoDetalleDto(
     string Producto,
     decimal Cantidad,
     string? Observacion,
+    string EstadoItem,
     bool Impreso);
 public record DeliveryPedidoDto(
     int Id,
