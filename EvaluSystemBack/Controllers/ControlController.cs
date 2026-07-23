@@ -14,6 +14,7 @@ public class ControlController : ControllerBase
 {
     private const string EstadoDetalleAprobado = "AP";
     private const string EstadoDetalleRechazado = "RE";
+    private const string EstadoVentaRechazado = "RE";
 
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
@@ -247,13 +248,13 @@ public class ControlController : ControllerBase
 
         if (pedido.Detalles.All(x => EsEstadoItem(x.EstadoItem, EstadoDetalleRechazado)))
         {
-            var estadoEliminado = await _estadoVentaFlujoService.ObtenerPorIdAsync("XX", cancellationToken);
-            if (estadoEliminado is null)
+            var estadoRechazado = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaRechazado, cancellationToken);
+            if (estadoRechazado is null)
             {
-                return "No existe el estado eliminado configurado.";
+                return "No existe el estado rechazado configurado.";
             }
 
-            pedido.EstadoVentaId = estadoEliminado.Id;
+            pedido.EstadoVentaId = estadoRechazado.Id;
         }
         else
         {

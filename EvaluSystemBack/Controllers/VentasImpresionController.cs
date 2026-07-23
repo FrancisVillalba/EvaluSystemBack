@@ -17,6 +17,7 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class VentasImpresionController : ControllerBase
 {
+    private static readonly HashSet<string> EstadosVentaComisionables = new(StringComparer.OrdinalIgnoreCase) { "CO", "EE", "PE", "PI" };
     private const string ConfigMontoEnvioTransportadora = "MONTO_ENVIO_TRANSPORTADORA";
     private const int ConfigMontoEnvioTransportadoraNumero = 1;
     private const decimal MontoEnvioTransportadoraDefault = 10000;
@@ -264,9 +265,11 @@ public class VentasImpresionController : ControllerBase
             var perfilComisionId = canViewAll
                 ? SellerCommissionProfileId(venta.VendedorId, perfilesPorUsuario, perfilVentasId, perfilVentaExternaId)
                 : perfilVentasId;
-            var totalComision = venta.Detalles.Sum(detalle =>
-                detalle.Cantidad * ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
-                (detalle.PrecioExtra ?? 0));
+            var totalComision = EstadosVentaComisionables.Contains(venta.EstadoVentaId)
+                ? venta.Detalles.Where(EsDetalleComisionable).Sum(detalle =>
+                    detalle.Cantidad * ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
+                    (detalle.PrecioExtra ?? 0))
+                : 0;
 
             return new VentaUsuarioItemDto(
                 venta.Id,
@@ -665,6 +668,11 @@ public class VentasImpresionController : ControllerBase
             .Where(x => x.Estado && x.Nombre == profileName)
             .Select(x => x.Id)
             .FirstOrDefaultAsync();
+    }
+
+    private static bool EsDetalleComisionable(Models.VentaImpresionDet detalle)
+    {
+        return !string.Equals((detalle.EstadoItem ?? string.Empty).Trim(), "RE", StringComparison.OrdinalIgnoreCase);
     }
 
     private static decimal ResolveCommission(

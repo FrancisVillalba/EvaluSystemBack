@@ -15,6 +15,8 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class GruposVentaController : ControllerBase
 {
+    private static readonly HashSet<string> EstadosVentaComisionables = new(StringComparer.OrdinalIgnoreCase) { "CO", "EE", "PE", "PI" };
+
     private readonly EvaluSystemDbContext _context;
 
     public GruposVentaController(EvaluSystemDbContext context)
@@ -390,11 +392,21 @@ public class GruposVentaController : ControllerBase
         bool includeExtra,
         IReadOnlyCollection<Models.ProductoComision> comisiones)
     {
-        return venta.Detalles.Sum(detalle =>
+        if (!EstadosVentaComisionables.Contains(venta.EstadoVentaId))
+        {
+            return 0;
+        }
+
+        return venta.Detalles.Where(EsDetalleComisionable).Sum(detalle =>
         {
             var comisionUnitario = ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
             return detalle.Cantidad * comisionUnitario + (includeExtra ? detalle.PrecioExtra ?? 0 : 0);
         });
+    }
+
+    private static bool EsDetalleComisionable(Models.VentaImpresionDet detalle)
+    {
+        return !string.Equals((detalle.EstadoItem ?? string.Empty).Trim(), "RE", StringComparison.OrdinalIgnoreCase);
     }
 
     private static decimal ResolveCommission(

@@ -19,9 +19,7 @@ public class ReportesController : ControllerBase
     private const string EstadoLoteGenerado = "Generado";
     private const string EstadoLotePagado = "Pagado";
     private const string EstadoLoteAnulado = "Anulado";
-    private const int FlujoImpresion = 2;
-    private const int FlujoPendienteEnvio = 3;
-    private const int FlujoEntregado = 4;
+    private static readonly string[] EstadosVentaComisionables = ["CO", "EE", "PE", "PI"];
     private readonly EvaluSystemDbContext _context;
     private readonly IWebHostEnvironment _environment;
 
@@ -349,11 +347,7 @@ public class ReportesController : ControllerBase
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || scopeTeamLeaders || x.VendedorId == vendedorId.Value)
             .Where(x => !x.Reposicion)
-            .Where(x =>
-                x.EstadoVenta != null &&
-                (x.EstadoVenta.NumeroFlujo == FlujoImpresion ||
-                 x.EstadoVenta.NumeroFlujo == FlujoPendienteEnvio ||
-                 x.EstadoVenta.NumeroFlujo == FlujoEntregado))
+            .Where(x => EstadosVentaComisionables.Contains(x.EstadoVentaId))
             .OrderBy(x => x.VendedorId)
             .ThenBy(x => x.FechaCreacion)
             .ToListAsync();
