@@ -191,10 +191,13 @@ public class ControlController : ControllerBase
         }
 
         var userId = CurrentUserId();
+        var observacion = request.Observacion.Trim();
         detalle.EstadoItem = EstadoDetalleRechazado;
-        detalle.Observacion = request.Observacion.Trim();
+        detalle.Observacion = observacion;
         detalle.FechaModificacion = DateTime.Now;
         detalle.UsuModificacion = userId ?? detalle.UsuModificacion;
+
+        detalle.Cabecera.Observacion = observacion;
 
         var updateError = await ActualizarCabeceraDespuesDeControlAsync(detalle.Cabecera, userId, cancellationToken);
         if (updateError is not null)
