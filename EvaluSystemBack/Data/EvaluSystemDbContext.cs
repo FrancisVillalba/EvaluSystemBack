@@ -453,7 +453,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.MontoPagado).HasColumnName("montoPagado").HasPrecision(18, 2);
             entity.Property(e => e.EstadoPagadoId).HasColumnName("estadoPagado").HasMaxLength(50);
             entity.Property(e => e.FechaEntrega).HasColumnName("fecha_entrega").HasColumnType("datetime");
-            entity.Property(e => e.ComprobantePago).HasColumnName("comprobante_pago").HasMaxLength(500);
+            entity.Property(e => e.ComprobantePago).HasColumnName("comprobante_pago").HasMaxLength(5000);
             entity.Property(e => e.ComprobantePagoNombre).HasColumnName("comprobante_pago_nombre").HasMaxLength(255);
             entity.Property(e => e.Observacion).HasColumnName("observacion").HasMaxLength(500);
             entity.Property(e => e.MetodoEntrega).HasColumnName("metodo_entrega").HasMaxLength(30).HasDefaultValue("DELIVERY");

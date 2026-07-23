@@ -426,6 +426,61 @@ public class VentasImpresionController : ControllerBase
             mejoresVendedores));
     }
 
+    [HttpGet("dashboard/pedidos")]
+    [SkipPermission]
+    public async Task<ActionResult<IEnumerable<DashboardPedidoDto>>> GetDashboardPedidos(
+        [FromQuery] string tipo,
+        [FromQuery] string? cliente = null)
+    {
+        var currentUserId = CurrentUserId();
+        if (!currentUserId.HasValue ||
+            !await _permisoService.UsuarioTienePermisoAsync(currentUserId.Value, "Tablero", "ver"))
+        {
+            return Forbid();
+        }
+
+        var ventas = await Query().AsNoTracking().ToListAsync();
+        var today = DateTime.Today;
+        var normalizedType = (tipo ?? string.Empty).Trim().ToLowerInvariant();
+        IEnumerable<Models.VentaImpresionCab> filtered = normalizedType switch
+        {
+            "cargados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today),
+            "impresos" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today && IsSent(x.EstadoVenta?.Nombre)),
+            "pendientes-impresion" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today && IsPendingPrint(x.EstadoVenta?.Nombre)),
+            "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today && IsDelivered(x.EstadoVenta?.Nombre)),
+            "pendientes-pago" => ventas.Where(x => Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
+                (string.IsNullOrWhiteSpace(cliente) || string.Equals(x.Cliente?.Nombre, cliente, StringComparison.OrdinalIgnoreCase))),
+            _ => Array.Empty<Models.VentaImpresionCab>()
+        };
+
+        if (normalizedType is not ("cargados" or "impresos" or "pendientes-impresion" or "enviados" or "pendientes-pago"))
+        {
+            return BadRequest(new { message = "El tipo de detalle del dashboard no es valido." });
+        }
+
+        var vendedorIds = filtered.Select(x => x.VendedorId).Distinct().ToList();
+        var vendedores = await _context.Usuarios
+            .AsNoTracking()
+            .Include(x => x.Persona)
+            .Where(x => vendedorIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, NombreUsuario);
+
+        return Ok(filtered
+            .OrderByDescending(x => x.FechaCreacion)
+            .Select(x => new DashboardPedidoDto(
+                x.Id,
+                x.FechaCreacion,
+                x.Cliente?.Nombre ?? "Sin cliente",
+                vendedores.GetValueOrDefault(x.VendedorId, $"Vendedor {x.VendedorId}"),
+                x.EstadoVenta?.Nombre ?? x.EstadoVentaId,
+                x.FormaPago?.Nombre ?? x.FormaPagoId,
+                MetodoEntregaLabel(x.MetodoEntrega),
+                x.TotalVenta,
+                x.MontoPagado ?? 0,
+                Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0)))
+            .ToList());
+    }
+
     [HttpPost]
     public async Task<ActionResult<VentaImpresionCabDto>> Create(VentaImpresionCabRequest request)
     {

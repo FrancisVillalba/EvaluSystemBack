@@ -279,7 +279,7 @@ public record VentaImpresionCabRequest(
     [StringLength(50)]
     string? EstadoPagadoId,
     DateTime? FechaEntrega,
-    [StringLength(500)]
+    [StringLength(5000)]
     string? ComprobantePago,
     [StringLength(255)]
     string? ComprobantePagoNombre,
@@ -422,7 +422,7 @@ public record VentaImpresionCompletaRequest(
     [StringLength(50)]
     string? EstadoPagadoId,
     DateTime? FechaEntrega,
-    [StringLength(500)]
+    [StringLength(5000)]
     string? ComprobantePago,
     [StringLength(255)]
     string? ComprobantePagoNombre,
@@ -461,7 +461,7 @@ public record VentaImpresionCompletaUpdateRequest(
     [StringLength(50)]
     string? EstadoPagadoId,
     DateTime? FechaEntrega,
-    [StringLength(500)]
+    [StringLength(5000)]
     string? ComprobantePago,
     [StringLength(255)]
     string? ComprobantePagoNombre,

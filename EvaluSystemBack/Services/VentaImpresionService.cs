@@ -924,9 +924,9 @@ public class VentaImpresionService : IVentaImpresionService
             throw new InvalidOperationException("El archivo debe guardarse en el servidor. En la venta solo se guarda la ruta del archivo.");
         }
 
-        if (value.Length > 500)
+        if (value.Length > 5000)
         {
-            throw new InvalidOperationException("La ruta del archivo no puede superar 500 caracteres.");
+            throw new InvalidOperationException("La ruta del archivo no puede superar 5000 caracteres.");
         }
 
         return value;
