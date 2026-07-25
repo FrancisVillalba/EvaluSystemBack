@@ -24,11 +24,13 @@ public class DeliveryController : ControllerBase
     private const string EstadoVentaEnviado = "EE";
     private readonly EvaluSystemDbContext _context;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
+    private readonly IPedidoFlujoService _pedidoFlujoService;
 
-    public DeliveryController(EvaluSystemDbContext context, IEstadoVentaFlujoService estadoVentaFlujoService)
+    public DeliveryController(EvaluSystemDbContext context, IEstadoVentaFlujoService estadoVentaFlujoService, IPedidoFlujoService pedidoFlujoService)
     {
         _context = context;
         _estadoVentaFlujoService = estadoVentaFlujoService;
+        _pedidoFlujoService = pedidoFlujoService;
     }
 
     [HttpGet("disponibles")]
@@ -425,7 +427,7 @@ public class DeliveryController : ControllerBase
 
         pedido.UsuarioEntregaPedidoId = userId.Value;
         pedido.FechaTomaDelivery = DateTime.Now;
-        await MarkAsSentAsync(pedido, userId.Value, cancellationToken);
+        await MarkAsSentAsync(pedido, userId.Value, "Pedido tomado por delivery", cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == id, cancellationToken);
         return Ok(ToDto(updated));
@@ -468,11 +470,15 @@ public class DeliveryController : ControllerBase
             return BadRequest(new { message = "No existe un estado pendiente de envio configurado." });
         }
 
+        var estadoAnteriorId = pedido.EstadoVentaId;
         pedido.EstadoVentaId = estadoPendienteEnvio.Id;
         pedido.UsuarioEntregaPedidoId = null;
         pedido.FechaTomaDelivery = null;
         pedido.UsuModificacion = userId.Value;
         pedido.FechaModificacion = DateTime.Now;
+        await _pedidoFlujoService.RegistrarAsync(
+            pedido, "Pedido liberado por delivery", estadoAnteriorId, pedido.EstadoVentaId,
+            usuarioId: userId.Value, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return NoContent();
@@ -500,13 +506,13 @@ public class DeliveryController : ControllerBase
             return BadRequest(new { message = "Solo el delivery que tomo el pedido puede marcarlo como enviado." });
         }
 
-        await MarkAsSentAsync(pedido, userId.Value, cancellationToken);
+        await MarkAsSentAsync(pedido, userId.Value, "Pedido marcado como enviado", cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == id, cancellationToken);
         return Ok(ToDto(updated));
     }
 
-    private async Task MarkAsSentAsync(VentaImpresionCab pedido, int userId, CancellationToken cancellationToken)
+    private async Task MarkAsSentAsync(VentaImpresionCab pedido, int userId, string accion, CancellationToken cancellationToken)
     {
         var estadoEnviado = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaEnviado, cancellationToken);
 
@@ -515,11 +521,15 @@ public class DeliveryController : ControllerBase
             throw new InvalidOperationException("No existe un estado de venta para enviado.");
         }
 
+        var estadoAnteriorId = pedido.EstadoVentaId;
         pedido.EstadoVentaId = estadoEnviado.Id;
         pedido.UsuarioEntregaPedidoId = userId;
         pedido.UsuModificacion = userId;
         pedido.FechaModificacion = DateTime.Now;
 
+        await _pedidoFlujoService.RegistrarAsync(
+            pedido, accion, estadoAnteriorId, pedido.EstadoVentaId,
+            usuarioId: userId, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
     }
 

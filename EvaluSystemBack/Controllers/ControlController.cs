@@ -21,17 +21,20 @@ public class ControlController : ControllerBase
     private readonly IPermisoService _permisoService;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
     private readonly IConfiguracionService _configuracionService;
+    private readonly IPedidoFlujoService _pedidoFlujoService;
 
     public ControlController(
         EvaluSystemDbContext context,
         IPermisoService permisoService,
         IEstadoVentaFlujoService estadoVentaFlujoService,
-        IConfiguracionService configuracionService)
+        IConfiguracionService configuracionService,
+        IPedidoFlujoService pedidoFlujoService)
     {
         _context = context;
         _permisoService = permisoService;
         _estadoVentaFlujoService = estadoVentaFlujoService;
         _configuracionService = configuracionService;
+        _pedidoFlujoService = pedidoFlujoService;
     }
 
     [HttpGet]
@@ -142,6 +145,7 @@ public class ControlController : ControllerBase
             return BadRequest(new { message = "El detalle ya fue controlado." });
         }
 
+        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
         var userId = CurrentUserId();
         detalle.EstadoItem = EstadoDetalleAprobado;
         detalle.FechaModificacion = DateTime.Now;
@@ -153,6 +157,14 @@ public class ControlController : ControllerBase
             return BadRequest(new { message = updateError });
         }
 
+        await _pedidoFlujoService.RegistrarAsync(
+            detalle.Cabecera,
+            "Detalle aprobado en control",
+            estadoAnteriorId,
+            detalle.Cabecera.EstadoVentaId,
+            detalleId: detalle.Id,
+            usuarioId: userId,
+            cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == detalle.CabId, cancellationToken);
@@ -192,6 +204,7 @@ public class ControlController : ControllerBase
             return BadRequest(new { message = "El detalle ya fue controlado." });
         }
 
+        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
         var userId = CurrentUserId();
         var observacion = request.Observacion.Trim();
         detalle.EstadoItem = EstadoDetalleRechazado;
@@ -207,6 +220,15 @@ public class ControlController : ControllerBase
             return BadRequest(new { message = updateError });
         }
 
+        await _pedidoFlujoService.RegistrarAsync(
+            detalle.Cabecera,
+            "Detalle rechazado en control",
+            estadoAnteriorId,
+            detalle.Cabecera.EstadoVentaId,
+            observacion,
+            detalle.Id,
+            userId,
+            cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == detalle.CabId, cancellationToken);

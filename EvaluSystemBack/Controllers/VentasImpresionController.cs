@@ -26,17 +26,20 @@ public class VentasImpresionController : ControllerBase
     private readonly IVentaImpresionService _ventaImpresionService;
     private readonly IPermisoService _permisoService;
     private readonly IConfiguracionService _configuracionService;
+    private readonly IPedidoFlujoService _pedidoFlujoService;
 
     public VentasImpresionController(
         EvaluSystemDbContext context,
         IVentaImpresionService ventaImpresionService,
         IPermisoService permisoService,
-        IConfiguracionService configuracionService)
+        IConfiguracionService configuracionService,
+        IPedidoFlujoService pedidoFlujoService)
     {
         _context = context;
         _ventaImpresionService = ventaImpresionService;
         _permisoService = permisoService;
         _configuracionService = configuracionService;
+        _pedidoFlujoService = pedidoFlujoService;
     }
 
     [HttpGet]
@@ -311,6 +314,29 @@ public class VentasImpresionController : ControllerBase
         return Ok(item.ToDto());
     }
 
+    [HttpGet("{id:int}/flujo")]
+    public async Task<ActionResult<IEnumerable<PedidoFlujoEventoDto>>> GetFlujo(int id)
+    {
+        var pedido = await _context.VentasImpresionCab
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id);
+
+        if (pedido is null)
+        {
+            return NotFound();
+        }
+
+        if (!await CurrentUserCanViewAllOrdersAsync())
+        {
+            var currentUserId = CurrentUserId();
+            if (!currentUserId.HasValue || pedido.VendedorId != currentUserId.Value)
+            {
+                return Forbid();
+            }
+        }
+
+        return Ok(_pedidoFlujoService.Obtener(pedido).OrderByDescending(x => x.FechaHora));
+    }
     [HttpGet("dashboard")]
     [SkipPermission]
     public async Task<ActionResult<DashboardSummaryDto>> GetDashboard()

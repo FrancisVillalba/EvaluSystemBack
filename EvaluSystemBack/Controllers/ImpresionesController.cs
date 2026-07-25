@@ -19,13 +19,15 @@ public class ImpresionesController : ControllerBase
     private readonly IPermisoService _permisoService;
     private readonly IConfiguracionService _configuracionService;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
+    private readonly IPedidoFlujoService _pedidoFlujoService;
 
-    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService, IEstadoVentaFlujoService estadoVentaFlujoService)
+    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService, IEstadoVentaFlujoService estadoVentaFlujoService, IPedidoFlujoService pedidoFlujoService)
     {
         _context = context;
         _permisoService = permisoService;
         _configuracionService = configuracionService;
         _estadoVentaFlujoService = estadoVentaFlujoService;
+        _pedidoFlujoService = pedidoFlujoService;
     }
 
     [HttpGet]
@@ -158,6 +160,7 @@ public class ImpresionesController : ControllerBase
             return NotFound(new { message = "No se encontro el detalle de impresion." });
         }
 
+        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
         detalle.CheckImpresion = true;
 
         var detallesPedido = await _context.VentasImpresionDet
@@ -175,6 +178,13 @@ public class ImpresionesController : ControllerBase
             }
         }
 
+        await _pedidoFlujoService.RegistrarAsync(
+            detalle.Cabecera,
+            pedidoCompleto ? "Impresión completada" : "Detalle marcado como impreso",
+            estadoAnteriorId,
+            detalle.Cabecera.EstadoVentaId,
+            detalleId: detalle.Id,
+            cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         var estadoVenta = await _context.EstadosVenta
@@ -241,11 +251,21 @@ public class ImpresionesController : ControllerBase
         detalle.FechaModificacion = now;
         detalle.UsuModificacion = userId ?? detalle.UsuModificacion;
 
+        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
         detalle.Cabecera.EstadoVentaId = estadoCarga.Id;
         detalle.Cabecera.Observacion = observacion;
         detalle.Cabecera.FechaModificacion = now;
         detalle.Cabecera.UsuModificacion = userId ?? detalle.Cabecera.UsuModificacion;
 
+        await _pedidoFlujoService.RegistrarAsync(
+            detalle.Cabecera,
+            "Rechazado en impresión y devuelto a carga",
+            estadoAnteriorId,
+            detalle.Cabecera.EstadoVentaId,
+            observacion,
+            detalle.Id,
+            userId,
+            cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new ImpresionDevolverDto(

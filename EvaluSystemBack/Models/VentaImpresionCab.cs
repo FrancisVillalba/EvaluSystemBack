@@ -15,6 +15,7 @@ public class VentaImpresionCab
     public string? ComprobantePago { get; set; }
     public string? ComprobantePagoNombre { get; set; }
     public string? Observacion { get; set; }
+    public string? FlujoJson { get; set; }
     public string? MetodoEntrega { get; set; }
     public bool Reposicion { get; set; }
     public int? UsuarioEntregaPedidoId { get; set; }

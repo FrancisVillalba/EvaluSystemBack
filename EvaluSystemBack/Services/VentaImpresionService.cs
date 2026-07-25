@@ -29,15 +29,18 @@ public class VentaImpresionService : IVentaImpresionService
     private readonly EvaluSystemDbContext _context;
     private readonly IConfiguracionService _configuracionService;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
+    private readonly IPedidoFlujoService _pedidoFlujoService;
 
     public VentaImpresionService(
         EvaluSystemDbContext context,
         IConfiguracionService configuracionService,
-        IEstadoVentaFlujoService estadoVentaFlujoService)
+        IEstadoVentaFlujoService estadoVentaFlujoService,
+        IPedidoFlujoService pedidoFlujoService)
     {
         _context = context;
         _configuracionService = configuracionService;
         _estadoVentaFlujoService = estadoVentaFlujoService;
+        _pedidoFlujoService = pedidoFlujoService;
     }
 
     public async Task<VentaImpresionCabDto> CrearVentaCompletaAsync(VentaImpresionCompletaRequest request)
@@ -100,6 +103,7 @@ public class VentaImpresionService : IVentaImpresionService
             _context.VentasImpresionDet.Add(detalle);
         }
 
+        await _pedidoFlujoService.RegistrarAsync(cabecera, "Pedido creado", null, cabecera.EstadoVentaId, cabecera.Observacion);
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -159,6 +163,7 @@ public class VentaImpresionService : IVentaImpresionService
             cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
             cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
 
+            await _pedidoFlujoService.RegistrarAsync(cabecera, "Pago del pedido actualizado", cabecera.EstadoVentaId, cabecera.EstadoVentaId);
             await _context.SaveChangesAsync();
 
             var ventaSoloPago = await QueryVentaCompleta()
@@ -174,6 +179,7 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarVentaEditableAsync(cabecera);
         await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
         await ValidarAdjuntosParaImpresionAsync(cabecera.EstadoVentaId, request.EstadoVentaId, detalles);
+        var estadoAnteriorId = cabecera.EstadoVentaId;
         var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -222,6 +228,12 @@ public class VentaImpresionService : IVentaImpresionService
             }
         }
 
+        await _pedidoFlujoService.RegistrarAsync(
+            cabecera,
+            estadoAnteriorId == cabecera.EstadoVentaId ? "Pedido modificado" : "Estado del pedido actualizado",
+            estadoAnteriorId,
+            cabecera.EstadoVentaId,
+            cabecera.Observacion);
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -255,6 +267,7 @@ public class VentaImpresionService : IVentaImpresionService
             cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
             cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
 
+            await _pedidoFlujoService.RegistrarAsync(cabecera, "Pago del pedido actualizado", cabecera.EstadoVentaId, cabecera.EstadoVentaId);
             await _context.SaveChangesAsync();
 
             var ventaSoloPago = await QueryVentaCompleta()
@@ -280,6 +293,7 @@ public class VentaImpresionService : IVentaImpresionService
 
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
+        var estadoAnteriorId = cabecera.EstadoVentaId;
         cabecera.EstadoVentaId = estadoVentaId;
         cabecera.VendedorId = request.VendedorId;
         cabecera.MontoPagado = request.MontoPagado ?? 0;
@@ -292,6 +306,10 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.MontoEnvioTransportadora = await MontoEnvioTransportadoraParaActualizacionAsync(cabecera, cabecera.MetodoEntrega, request.ClienteId);
         cabecera.TotalVenta = request.TotalVenta + cabecera.MontoEnvioTransportadora;
 
+        await _pedidoFlujoService.RegistrarAsync(
+            cabecera,
+            estadoAnteriorId == cabecera.EstadoVentaId ? "Pedido modificado" : "Estado del pedido actualizado",
+            estadoAnteriorId, cabecera.EstadoVentaId, cabecera.Observacion);
         await _context.SaveChangesAsync();
 
         var venta = await QueryVentaCompleta()
@@ -322,9 +340,11 @@ public class VentaImpresionService : IVentaImpresionService
 
         var estadoEliminado = await ObtenerEstadoVentaActivoAsync(EstadoVentaEliminado, "No se encontro el estado eliminado.");
 
+        var estadoAnteriorId = cabecera.EstadoVentaId;
         cabecera.EstadoVentaId = estadoEliminado.Id;
         cabecera.Observacion = request.Observacion.Trim();
 
+        await _pedidoFlujoService.RegistrarAsync(cabecera, "Pedido eliminado", estadoAnteriorId, cabecera.EstadoVentaId, cabecera.Observacion);
         await _context.SaveChangesAsync();
 
         var venta = await QueryVentaCompleta()
