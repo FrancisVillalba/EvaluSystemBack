@@ -15,6 +15,7 @@ public class ControlController : ControllerBase
     private const string EstadoDetalleAprobado = "AP";
     private const string EstadoDetalleRechazado = "RE";
     private const string EstadoVentaRechazado = "RE";
+    private const string EstadoVentaPendienteEnvio = "PE";
 
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
@@ -258,7 +259,7 @@ public class ControlController : ControllerBase
         }
         else
         {
-            var siguienteEstado = await _estadoVentaFlujoService.ObtenerSiguienteAsync(pedido.EstadoVenta, cancellationToken);
+            var siguienteEstado = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaPendienteEnvio, cancellationToken);
             if (siguienteEstado is null)
             {
                 return "No existe un siguiente estado de venta configurado.";

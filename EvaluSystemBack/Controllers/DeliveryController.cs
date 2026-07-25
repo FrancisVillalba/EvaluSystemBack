@@ -21,6 +21,7 @@ public class DeliveryController : ControllerBase
     private const string EstadoRutaAbierto = "Abierto";
     private const string EstadoRutaCerrado = "Cerrado";
     private const string EstadoDetalleAprobado = "AP";
+    private const string EstadoVentaEnviado = "EE";
     private readonly EvaluSystemDbContext _context;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
 
@@ -507,7 +508,7 @@ public class DeliveryController : ControllerBase
 
     private async Task MarkAsSentAsync(VentaImpresionCab pedido, int userId, CancellationToken cancellationToken)
     {
-        var estadoEnviado = await _estadoVentaFlujoService.ObtenerSiguienteAsync(pedido.EstadoVenta, cancellationToken);
+        var estadoEnviado = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaEnviado, cancellationToken);
 
         if (estadoEnviado is null)
         {

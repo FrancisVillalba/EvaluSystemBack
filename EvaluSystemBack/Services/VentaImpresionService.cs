@@ -10,6 +10,8 @@ namespace EvaluSystemBack.Services;
 public class VentaImpresionService : IVentaImpresionService
 {
     private const string EstadoVentaCarga = "PC";
+    private const string EstadoVentaImpresion = "PI";
+    private const string EstadoVentaControl = "CO";
     private const string EstadoVentaInicial = "PI";
     private const string EstadoVentaLimiteEditable = "PE";
     private const string EstadoVentaEliminado = "XX";
@@ -677,25 +679,22 @@ public class VentaImpresionService : IVentaImpresionService
     private async Task ValidarTransicionEstadoAsync(string estadoActualId, string? estadoDestinoIdRequest)
     {
         var estadoDestinoId = await ResolverEstadoVentaIdAsync(estadoDestinoIdRequest);
-        if (estadoActualId == estadoDestinoId)
+        if (string.Equals(estadoActualId, estadoDestinoId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         var actual = await ObtenerEstadoVentaActivoAsync(estadoActualId, "No se pudo validar el flujo de estados.");
         var destino = await ObtenerEstadoVentaActivoAsync(estadoDestinoId, "No se pudo validar el flujo de estados.");
-        var estadoCarga = await ObtenerEstadoVentaActivoAsync(EstadoVentaCarga, "No se encontro el estado de carga.");
-        var estadoLimiteEditable = await ObtenerEstadoVentaActivoAsync(EstadoVentaLimiteEditable, "No se encontro el estado limite editable.");
 
-        var siguiente = await _estadoVentaFlujoService.ObtenerSiguienteAsync(actual, CancellationToken.None);
-        var anterior = await _estadoVentaFlujoService.ObtenerAnteriorAsync(actual.Id, CancellationToken.None);
-
-        var permitidoAvanzarCargaAImpresion = EsMismoEstado(actual, estadoCarga) && EsMismoEstado(siguiente, destino);
-        var permitidoRetroceder = EstadoDentroDelLimite(actual, estadoLimiteEditable) && EsMismoEstado(anterior, destino);
+        var permitidoAvanzarCargaAImpresion =
+            string.Equals(actual.Id, EstadoVentaCarga, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(destino.Id, EstadoVentaImpresion, StringComparison.OrdinalIgnoreCase);
+        var permitidoRetroceder = EsRetrocesoPermitido(actual.Id, destino.Id);
 
         if (!permitidoAvanzarCargaAImpresion && !permitidoRetroceder)
         {
-            throw new InvalidOperationException("Desde pedidos solo se puede avanzar de Carga a Impresion o devolver una venta al estado anterior.");
+            throw new InvalidOperationException("Desde pedidos solo se puede avanzar de Carga a Impresion o devolver una venta al estado anterior permitido.");
         }
     }
 
@@ -747,17 +746,16 @@ public class VentaImpresionService : IVentaImpresionService
     private async Task<bool> EsTransicionCargaAImpresionAsync(string estadoActualId, string? estadoDestinoIdRequest)
     {
         var estadoDestinoId = await ResolverEstadoVentaIdAsync(estadoDestinoIdRequest);
-        if (estadoActualId == estadoDestinoId)
+        if (string.Equals(estadoActualId, estadoDestinoId, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         var actual = await ObtenerEstadoVentaActivoAsync(estadoActualId, "No se pudo validar el flujo de estados.");
         var destino = await ObtenerEstadoVentaActivoAsync(estadoDestinoId, "No se pudo validar el flujo de estados.");
-        var estadoCarga = await ObtenerEstadoVentaActivoAsync(EstadoVentaCarga, "No se encontro el estado de carga.");
-        var siguiente = await _estadoVentaFlujoService.ObtenerSiguienteAsync(actual, CancellationToken.None);
 
-        return EsMismoEstado(actual, estadoCarga) && EsMismoEstado(siguiente, destino);
+        return string.Equals(actual.Id, EstadoVentaCarga, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(destino.Id, EstadoVentaImpresion, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ValidarEstadoInicialAsync(string? estadoVentaIdRequest)
@@ -804,6 +802,16 @@ public class VentaImpresionService : IVentaImpresionService
             && string.Equals(primero.Id, segundo.Id, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool EsRetrocesoPermitido(string estadoActualId, string estadoDestinoId)
+    {
+        return (estadoActualId.ToUpperInvariant(), estadoDestinoId.ToUpperInvariant()) switch
+        {
+            (EstadoVentaImpresion, EstadoVentaCarga) => true,
+            (EstadoVentaControl, EstadoVentaImpresion) => true,
+            (EstadoVentaLimiteEditable, EstadoVentaControl) => true,
+            _ => false
+        };
+    }
     private static bool EstadoDentroDelLimite(EstadoVenta estado, EstadoVenta limite)
     {
         return estado.NumeroFlujo.HasValue

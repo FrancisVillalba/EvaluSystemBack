@@ -16,7 +16,7 @@ public class MensajesController : ControllerBase
     private const int DiasMoraPedidoDefault = 7;
     private const string ConfigDiasAtrasoSaldoPendiente = "DIAS_ATRASO_SALDO_PENDIENTE";
     private const string ConfigDiasAvisoSaldoPendiente = "DiasAvisoSaldoPendiente";
-    private const int FlujoEliminado = 5;
+    private const string EstadoVentaEliminado = "XX";
     private readonly EvaluSystemDbContext _context;
 
     public MensajesController(EvaluSystemDbContext context)
@@ -98,8 +98,8 @@ public class MensajesController : ControllerBase
             var nombre = NombrePersona(persona);
             return new MensajePendienteDto(
                 $"cumple:{today:yyyy}:{persona.Id}",
-                "Cumpleaños del día",
-                $"Hoy es el cumpleaños de {nombre}. No te olvides de felicitarle.",
+                "CumpleaÃ±os del dÃ­a",
+                $"Hoy es el cumpleaÃ±os de {nombre}. No te olvides de felicitarle.",
                 "cumpleanios");
         });
     }
@@ -115,7 +115,7 @@ public class MensajesController : ControllerBase
             .Include(x => x.EstadoVenta)
             .Where(x => x.FechaCreacion.Date <= limite)
             .Where(x => x.TotalVenta > (x.MontoPagado ?? 0))
-            .Where(x => x.EstadoVenta == null || x.EstadoVenta.NumeroFlujo != FlujoEliminado);
+            .Where(x => x.EstadoVentaId != EstadoVentaEliminado);
         query = query.Where(x => x.VendedorId == usuarioId);
 
         var pedidos = await query

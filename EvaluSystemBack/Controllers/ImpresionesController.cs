@@ -12,6 +12,7 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class ImpresionesController : ControllerBase
 {
+    private const string EstadoVentaControl = "CO";
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
     private readonly IConfiguracionService _configuracionService;
@@ -163,7 +164,7 @@ public class ImpresionesController : ControllerBase
 
         if (pedidoCompleto)
         {
-            var siguienteEstado = await _estadoVentaFlujoService.ObtenerSiguienteAsync(detalle.Cabecera.EstadoVenta, cancellationToken);
+            var siguienteEstado = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaControl, cancellationToken);
 
             if (siguienteEstado is not null)
             {

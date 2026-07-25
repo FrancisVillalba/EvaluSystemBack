@@ -194,12 +194,12 @@ public class ReportesController : ControllerBase
             .Include(x => x.EstadoVenta)
             .Include(x => x.UsuarioEntregaPedido).ThenInclude(x => x!.Persona)
             .AsNoTracking()
-            .Where(x => (x.FechaTomaDelivery ?? x.FechaEntrega ?? x.FechaCreacion) >= from)
-            .Where(x => (x.FechaTomaDelivery ?? x.FechaEntrega ?? x.FechaCreacion) < toExclusive)
-            .Where(x => x.EstadoVenta != null && x.EstadoVenta.NumeroFlujo == 4)
+            .Where(x => x.FechaModificacion >= from)
+            .Where(x => x.FechaModificacion < toExclusive)
+            .Where(x => x.EstadoVentaId == "EE")
             .Where(x => string.IsNullOrWhiteSpace(method) || x.MetodoEntrega == method)
             .OrderBy(x => x.MetodoEntrega)
-            .ThenBy(x => x.FechaTomaDelivery ?? x.FechaEntrega ?? x.FechaCreacion)
+            .ThenBy(x => x.FechaModificacion)
             .ThenBy(x => x.Id)
             .ToListAsync();
 
@@ -210,7 +210,7 @@ public class ReportesController : ControllerBase
 
         var detalles = ventas.Select(x => new ReporteEnvioDetalleDto(
             x.Id,
-            x.FechaTomaDelivery ?? x.FechaEntrega ?? x.FechaCreacion,
+            x.FechaModificacion,
             x.Cliente?.Nombre ?? string.Empty,
             x.MetodoEntrega,
             MetodoEntregaLabel(x.MetodoEntrega),
@@ -258,7 +258,7 @@ public class ReportesController : ControllerBase
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
-            .Where(x => x.EstadoVenta != null && x.EstadoVenta.NumeroFlujo != 5)
+            .Where(x => x.EstadoVentaId != "XX")
             .OrderBy(x => x.FechaCreacion)
             .ToListAsync();
 
@@ -1142,8 +1142,8 @@ public class ReportesController : ControllerBase
             y -= 66;
 
             var groups = seller.Detalles
-                .GroupBy(detail => new { detail.Producto, detail.ComisionUnitario, detail.PrecioUnitario })
-                .OrderBy(group => group.Key.Producto)
+                .GroupBy(detail => detail.Producto.Trim(), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if (groups.Count == 0)
@@ -1161,7 +1161,7 @@ public class ReportesController : ControllerBase
                     y = PageHeight - 58;
                 }
 
-                y = DrawProductGroup(writer, y, group.Key.Producto, group.Key.ComisionUnitario, group, isTeamLeaderReport);
+                y = DrawProductGroup(writer, y, group.Key, group.First().ComisionUnitario, group, isTeamLeaderReport);
                 y -= 20;
             }
         }
