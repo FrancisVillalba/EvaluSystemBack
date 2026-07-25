@@ -391,6 +391,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Telefono).HasColumnName("telefono").HasMaxLength(50);
             entity.Property(e => e.Direccion).HasColumnName("direccion").HasMaxLength(200);
             entity.Property(e => e.Observacion).HasColumnName("observacion").HasMaxLength(500);
+            entity.Property(e => e.Monto).HasColumnName("monto").HasPrecision(18, 2);
             entity.Property(e => e.Estado).HasColumnName("estado");
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion").IsRequired();

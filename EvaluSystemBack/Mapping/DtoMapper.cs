@@ -72,6 +72,7 @@ public static class DtoMapper
             entity.ClienteId,
             entity.TransportadoraId,
             entity.Transportadora?.Nombre,
+            entity.Transportadora?.Monto ?? 0,
             entity.NombreReceptor,
             entity.DocumentoReceptor,
             entity.TelefonoReceptor,
@@ -116,7 +117,7 @@ public static class DtoMapper
 
     public static TransportadoraDto ToDto(this Transportadora entity)
     {
-        return new TransportadoraDto(entity.Id, entity.Nombre, entity.Telefono, entity.Direccion, entity.Observacion, entity.Estado);
+        return new TransportadoraDto(entity.Id, entity.Nombre, entity.Telefono, entity.Direccion, entity.Observacion, entity.Monto, entity.Estado);
     }
 
     public static Transportadora ToEntity(this TransportadoraRequest request, Transportadora? entity = null)
@@ -126,6 +127,7 @@ public static class DtoMapper
         entity.Telefono = request.Telefono;
         entity.Direccion = request.Direccion;
         entity.Observacion = request.Observacion;
+        entity.Monto = request.Monto;
         entity.Estado = request.Estado;
         return entity;
     }

@@ -217,7 +217,10 @@ public class ReportesController : ControllerBase
             x.EstadoVenta?.Nombre ?? x.EstadoVentaId,
             x.UsuarioEntregaPedido is null ? null : NombreUsuario(x.UsuarioEntregaPedido),
             x.Cliente?.DatosEnvio?.Ciudad?.Nombre ?? x.Cliente?.Ciudad?.Nombre,
-            x.TotalVenta)).ToList();
+            x.TotalVenta,
+            string.Equals(x.MetodoEntrega, "TRANSPORTADORA", StringComparison.OrdinalIgnoreCase)
+                ? x.MontoEnvioTransportadora
+                : 0)).ToList();
 
         var resumen = ventas
             .GroupBy(x => new
@@ -227,13 +230,16 @@ public class ReportesController : ControllerBase
             })
             .Select(group =>
             {
-                var cantidadTransportadora = group.Count(x => string.Equals(x.MetodoEntrega, "TRANSPORTADORA", StringComparison.OrdinalIgnoreCase));
+                var transportadora = group
+                    .Where(x => string.Equals(x.MetodoEntrega, "TRANSPORTADORA", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
                 return new ReporteEnvioResumenDto(
                     group.Key.UsuarioEntregaPedidoId,
                     group.Key.UsuarioEntrega,
                     group.Count(),
-                    cantidadTransportadora,
-                    group.Sum(x => x.TotalVenta));
+                    transportadora.Count,
+                    group.Sum(x => x.TotalVenta),
+                    transportadora.Sum(x => x.MontoEnvioTransportadora));
             })
             .OrderBy(x => x.UsuarioEntrega)
             .ToList();

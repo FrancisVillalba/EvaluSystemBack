@@ -118,7 +118,7 @@ public class VentasImpresionController : ControllerBase
         var canViewUserSales = canViewAll || (currentUserId.HasValue && await UserHasProfileAsync(currentUserId.Value, "Ventas"));
 
         var clientes = await _context.Clientes
-            .Include(x => x.DatosEnvio)
+            .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .AsNoTracking()
             .Where(x => x.Estado != false)
             .ToListAsync();

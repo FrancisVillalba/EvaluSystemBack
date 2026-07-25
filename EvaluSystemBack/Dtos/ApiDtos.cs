@@ -52,6 +52,7 @@ public record ClienteDatosEnvioDto(
     int ClienteId,
     int TransportadoraId,
     string? Transportadora,
+    decimal MontoTransportadora,
     string NombreReceptor,
     string DocumentoReceptor,
     string TelefonoReceptor,
@@ -78,9 +79,9 @@ public record ClienteDatosEnvioRequest(
     string? Observacion,
     bool Estado);
 
-public record TransportadoraDto(int Id, string Nombre, string? Telefono, string? Direccion, string? Observacion, bool Estado);
+public record TransportadoraDto(int Id, string Nombre, string? Telefono, string? Direccion, string? Observacion, decimal Monto, bool Estado);
 
-public record TransportadoraRequest([Required] string Nombre, string? Telefono, string? Direccion, string? Observacion, bool Estado);
+public record TransportadoraRequest([Required] string Nombre, string? Telefono, string? Direccion, string? Observacion, [Range(0, double.MaxValue)] decimal Monto, bool Estado);
 
 public record PersonaDto(
     int Id,

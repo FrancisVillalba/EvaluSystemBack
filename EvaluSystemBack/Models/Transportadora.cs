@@ -7,6 +7,7 @@ public class Transportadora
     public string? Telefono { get; set; }
     public string? Direccion { get; set; }
     public string? Observacion { get; set; }
+    public decimal Monto { get; set; }
     public bool Estado { get; set; }
     public DateTime FechaCreacion { get; set; }
     public int UsuCreacion { get; set; }

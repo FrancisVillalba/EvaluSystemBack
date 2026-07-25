@@ -53,7 +53,8 @@ public record ReporteEnvioResumenDto(
     string UsuarioEntrega,
     int CantidadPedidos,
     int CantidadTransportadora,
-    decimal TotalPedidos);
+    decimal TotalPedidos,
+    decimal TotalComisionDelivery);
 
 public record ReporteEnvioDetalleDto(
     int PedidoId,
@@ -64,7 +65,8 @@ public record ReporteEnvioDetalleDto(
     string Estado,
     string? UsuarioEntrega,
     string? Ciudad,
-    decimal TotalPedido);
+    decimal TotalPedido,
+    decimal ComisionDelivery);
 
 public record ReporteResumenGerencialDto(
     DateTime FechaDesde,
