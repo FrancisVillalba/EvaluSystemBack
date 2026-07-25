@@ -26,6 +26,7 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<LotePago> LotesPago => Set<LotePago>();
     public DbSet<LotePagoDetalle> LotesPagoDetalle => Set<LotePagoDetalle>();
     public DbSet<MetodoEnvio> MetodosEnvio => Set<MetodoEnvio>();
+    public DbSet<Notificacion> Notificaciones => Set<Notificacion>();
     public DbSet<Perfil> Perfiles => Set<Perfil>();
     public DbSet<PerfilFormularioPermiso> PerfilFormularioPermisos => Set<PerfilFormularioPermiso>();
     public DbSet<Persona> Personas => Set<Persona>();
@@ -119,6 +120,24 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Valor).HasColumnName("valor").HasColumnType("varchar(max)").IsRequired();
         });
 
+        modelBuilder.Entity<Notificacion>(entity =>
+        {
+            entity.ToTable("Notificaciones");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("Id");
+            entity.Property(e => e.UsuarioId).HasColumnName("usuario_id");
+            entity.Property(e => e.Tipo).HasColumnName("tipo").HasMaxLength(30).IsRequired();
+            entity.Property(e => e.Titulo).HasColumnName("titulo").HasMaxLength(150).IsRequired();
+            entity.Property(e => e.Mensaje).HasColumnName("mensaje").HasMaxLength(500).IsRequired();
+            entity.Property(e => e.PedidoId).HasColumnName("pedido_id");
+            entity.Property(e => e.DetalleId).HasColumnName("detalle_id");
+            entity.Property(e => e.Producto).HasColumnName("producto").HasMaxLength(200);
+            entity.Property(e => e.Comentario).HasColumnName("comentario").HasMaxLength(500);
+            entity.Property(e => e.Leida).HasColumnName("leida");
+            entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion");
+            entity.Property(e => e.FechaLectura).HasColumnName("fecha_lectura");
+            entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<Departamento>(entity =>
         {
             entity.ToTable("Departamento");

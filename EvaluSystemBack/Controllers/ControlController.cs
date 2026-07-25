@@ -22,19 +22,22 @@ public class ControlController : ControllerBase
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
     private readonly IConfiguracionService _configuracionService;
     private readonly IPedidoFlujoService _pedidoFlujoService;
+    private readonly INotificacionService _notificacionService;
 
     public ControlController(
         EvaluSystemDbContext context,
         IPermisoService permisoService,
         IEstadoVentaFlujoService estadoVentaFlujoService,
         IConfiguracionService configuracionService,
-        IPedidoFlujoService pedidoFlujoService)
+        IPedidoFlujoService pedidoFlujoService,
+        INotificacionService notificacionService)
     {
         _context = context;
         _permisoService = permisoService;
         _estadoVentaFlujoService = estadoVentaFlujoService;
         _configuracionService = configuracionService;
         _pedidoFlujoService = pedidoFlujoService;
+        _notificacionService = notificacionService;
     }
 
     [HttpGet]
@@ -230,6 +233,8 @@ public class ControlController : ControllerBase
             userId,
             cancellationToken,
             detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
+        var producto = detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}";
+        await _notificacionService.CrearParaTodosAsync("RE", "Pedido rechazado en Control", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == detalle.CabId, cancellationToken);

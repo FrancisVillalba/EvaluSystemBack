@@ -21,14 +21,16 @@ public class ImpresionesController : ControllerBase
     private readonly IConfiguracionService _configuracionService;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
     private readonly IPedidoFlujoService _pedidoFlujoService;
+    private readonly INotificacionService _notificacionService;
 
-    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService, IEstadoVentaFlujoService estadoVentaFlujoService, IPedidoFlujoService pedidoFlujoService)
+    public ImpresionesController(EvaluSystemDbContext context, IPermisoService permisoService, IConfiguracionService configuracionService, IEstadoVentaFlujoService estadoVentaFlujoService, IPedidoFlujoService pedidoFlujoService, INotificacionService notificacionService)
     {
         _context = context;
         _permisoService = permisoService;
         _configuracionService = configuracionService;
         _estadoVentaFlujoService = estadoVentaFlujoService;
         _pedidoFlujoService = pedidoFlujoService;
+        _notificacionService = notificacionService;
     }
 
     [HttpGet]
@@ -270,6 +272,8 @@ public class ImpresionesController : ControllerBase
             userId,
             cancellationToken,
             detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
+        var producto = detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}";
+        await _notificacionService.CrearParaTodosAsync("DV", "Pedido devuelto desde Impresión", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new ImpresionDevolverDto(
