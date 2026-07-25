@@ -214,7 +214,7 @@ public class VentaImpresionService : IVentaImpresionService
             detalle.ArchivoDisenioNombre = detalleRequest.ArchivoDisenioNombre;
             detalle.Observacion = detalleRequest.Observacion;
             detalle.EstadoItem = string.IsNullOrWhiteSpace(detalleRequest.EstadoItem) ? EstadoDetalleInicial : detalleRequest.EstadoItem;
-            detalle.CheckImpresion = detalleRequest.CheckImpresion ?? false;
+            detalle.CheckImpresion = detalle.CheckImpresion == true || detalleRequest.CheckImpresion == true;
 
             if (!detalleRequest.Id.HasValue)
             {
@@ -427,7 +427,7 @@ public class VentaImpresionService : IVentaImpresionService
         detalle.ArchivoDisenioNombre = request.ArchivoDisenioNombre;
         detalle.Observacion = request.Observacion;
         detalle.EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? EstadoDetalleInicial : request.EstadoItem;
-        detalle.CheckImpresion = request.CheckImpresion ?? false;
+        detalle.CheckImpresion = detalle.CheckImpresion == true || request.CheckImpresion == true;
 
         await _context.SaveChangesAsync();
         await RecalcularTotalVentaAsync(cabId);

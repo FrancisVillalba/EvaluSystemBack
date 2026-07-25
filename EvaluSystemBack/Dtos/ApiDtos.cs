@@ -396,6 +396,18 @@ public record ImpresionMarcarDto(
     string EstadoVentaId,
     string? EstadoVenta);
 
+public record ImpresionDevolverRequest(
+    [Required]
+    [StringLength(500)]
+    string Observacion);
+
+public record ImpresionDevolverDto(
+    int DetalleId,
+    int PedidoId,
+    string EstadoVentaId,
+    string? EstadoVenta,
+    string Observacion);
+
 public record VentaImpresionDetRequest(
     int CabId,
     int ProductoId,

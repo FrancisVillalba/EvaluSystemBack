@@ -12,6 +12,8 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class ImpresionesController : ControllerBase
 {
+    private const string EstadoVentaCarga = "PC";
+    private const string EstadoVentaImpresion = "PI";
     private const string EstadoVentaControl = "CO";
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
@@ -47,6 +49,7 @@ public class ImpresionesController : ControllerBase
             .Include(x => x.Producto)
             .Include(x => x.TipoMaquina)
             .AsNoTracking()
+            .Where(x => x.Cabecera != null && x.Cabecera.EstadoVentaId == EstadoVentaImpresion)
             .Where(x => x.CheckImpresion != true)
             .Where(x => !string.IsNullOrWhiteSpace(x.ArchivoDisenio) || !string.IsNullOrWhiteSpace(x.ArchivoDisenioNombre));
 
@@ -187,6 +190,72 @@ public class ImpresionesController : ControllerBase
             estadoVenta?.Nombre ?? detalle.Cabecera.EstadoVentaId));
     }
 
+    [HttpPut("{detalleId:int}/devolver-carga")]
+    public async Task<ActionResult<ImpresionDevolverDto>> DevolverACarga(
+        int detalleId,
+        [FromBody] ImpresionDevolverRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!await TienePermisoAsync("editar"))
+        {
+            return Forbid();
+        }
+
+        var observacion = request.Observacion?.Trim();
+        if (string.IsNullOrWhiteSpace(observacion))
+        {
+            return BadRequest(new { message = "Debe agregar un comentario para devolver el pedido a carga." });
+        }
+
+        var detalle = await _context.VentasImpresionDet
+            .Include(x => x.Cabecera)
+            .ThenInclude(x => x!.EstadoVenta)
+            .FirstOrDefaultAsync(x => x.Id == detalleId, cancellationToken);
+
+        if (detalle is null || detalle.Cabecera is null)
+        {
+            return NotFound(new { message = "No se encontro el detalle de impresion." });
+        }
+
+        if (!string.Equals(detalle.Cabecera.EstadoVentaId, EstadoVentaImpresion, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Solo se pueden devolver pedidos que estan en impresion." });
+        }
+
+        if (detalle.CheckImpresion == true)
+        {
+            return BadRequest(new { message = "El detalle ya fue impreso y no se puede devolver ni modificar." });
+        }
+
+        var estadoCarga = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaCarga, cancellationToken);
+        if (estadoCarga is null)
+        {
+            return BadRequest(new { message = "No existe el estado de carga configurado." });
+        }
+
+        var userId = CurrentUserId();
+        var now = DateTime.Now;
+
+        detalle.Observacion = observacion;
+        detalle.CheckImpresion = false;
+        detalle.FechaModificacion = now;
+        detalle.UsuModificacion = userId ?? detalle.UsuModificacion;
+
+        detalle.Cabecera.EstadoVentaId = estadoCarga.Id;
+        detalle.Cabecera.Observacion = observacion;
+        detalle.Cabecera.FechaModificacion = now;
+        detalle.Cabecera.UsuModificacion = userId ?? detalle.Cabecera.UsuModificacion;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return Ok(new ImpresionDevolverDto(
+            detalle.Id,
+            detalle.CabId,
+            estadoCarga.Id,
+            estadoCarga.Nombre ?? estadoCarga.Id,
+            observacion));
+    }
+
     private async Task<string> GetBasePathAsync()
     {
         var basePath = await _configuracionService.ObtenerValorAsync("RUTA_DE_ARCHIVOS", 1)
@@ -208,6 +277,12 @@ public class ImpresionesController : ControllerBase
         return fullRequestedPath.StartsWith(normalizedBasePath, StringComparison.OrdinalIgnoreCase)
             ? fullRequestedPath
             : null;
+    }
+
+    private int? CurrentUserId()
+    {
+        var value = User.FindFirstValue("usuarioId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return int.TryParse(value, out var userId) ? userId : null;
     }
 
     private async Task<bool> TienePermisoAsync(string accion)
