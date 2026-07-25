@@ -5,6 +5,7 @@ public record DashboardSummaryDto(
     int PedidosCargados,
     int PedidosImpresos,
     int PedidosPendientesImpresion,
+    int PedidosControl,
     int PedidosEntregados,
     decimal TotalPedidosMensuales,
     DashboardGoalDto MetaMensualTotal,
@@ -12,7 +13,15 @@ public record DashboardSummaryDto(
     IEnumerable<DashboardMachineDto> PedidosMensualesPorMaquina,
     IEnumerable<DashboardGoalDto> MetasMensualesPorMaquina,
     IEnumerable<DashboardMoneyDto> PendientesPago,
-    IEnumerable<DashboardSellerDto> MejoresVendedores);
+    IEnumerable<DashboardSellerDto> MejoresVendedores,
+    DashboardStageDto Carga,
+    DashboardStageDto Impresion,
+    DashboardStageDto Control,
+    DashboardStageDto PendienteEnvio,
+    DashboardStageDto EnviadosHoy,
+    DashboardStageDto Incidencias);
+
+public record DashboardStageDto(int Total, int MovimientosHoy, int Demorados24, int Demorados48);
 
 public record DashboardMachineDto(string Nombre, decimal Cantidad);
 

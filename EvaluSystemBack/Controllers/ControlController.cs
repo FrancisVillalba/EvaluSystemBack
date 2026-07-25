@@ -228,7 +228,8 @@ public class ControlController : ControllerBase
             observacion,
             detalle.Id,
             userId,
-            cancellationToken);
+            cancellationToken,
+            detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
         await _context.SaveChangesAsync(cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == detalle.CabId, cancellationToken);
@@ -258,6 +259,7 @@ public class ControlController : ControllerBase
     private IQueryable<VentaImpresionDet> QueryDetalleForUpdate()
     {
         return _context.VentasImpresionDet
+            .Include(x => x.Producto)
             .Include(x => x.Cabecera).ThenInclude(x => x!.EstadoVenta)
             .Include(x => x.Cabecera).ThenInclude(x => x!.Detalles);
     }

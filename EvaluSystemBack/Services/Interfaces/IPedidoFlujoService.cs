@@ -13,7 +13,8 @@ public interface IPedidoFlujoService
         string? comentario = null,
         int? detalleId = null,
         int? usuarioId = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? producto = null);
 
     IReadOnlyList<PedidoFlujoEventoDto> Obtener(VentaImpresionCab pedido);
 }

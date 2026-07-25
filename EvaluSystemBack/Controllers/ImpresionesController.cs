@@ -15,6 +15,7 @@ public class ImpresionesController : ControllerBase
     private const string EstadoVentaCarga = "PC";
     private const string EstadoVentaImpresion = "PI";
     private const string EstadoVentaControl = "CO";
+    private const string EstadoDetalleDevuelto = "DV";
     private readonly EvaluSystemDbContext _context;
     private readonly IPermisoService _permisoService;
     private readonly IConfiguracionService _configuracionService;
@@ -218,6 +219,7 @@ public class ImpresionesController : ControllerBase
         }
 
         var detalle = await _context.VentasImpresionDet
+            .Include(x => x.Producto)
             .Include(x => x.Cabecera)
             .ThenInclude(x => x!.EstadoVenta)
             .FirstOrDefaultAsync(x => x.Id == detalleId, cancellationToken);
@@ -247,6 +249,7 @@ public class ImpresionesController : ControllerBase
         var now = DateTime.Now;
 
         detalle.Observacion = observacion;
+        detalle.EstadoItem = EstadoDetalleDevuelto;
         detalle.CheckImpresion = false;
         detalle.FechaModificacion = now;
         detalle.UsuModificacion = userId ?? detalle.UsuModificacion;
@@ -265,7 +268,8 @@ public class ImpresionesController : ControllerBase
             observacion,
             detalle.Id,
             userId,
-            cancellationToken);
+            cancellationToken,
+            detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new ImpresionDevolverDto(

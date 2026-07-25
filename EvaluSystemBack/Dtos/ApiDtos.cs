@@ -406,7 +406,8 @@ public record PedidoFlujoEventoDto(
     string EstadoNuevoId,
     string EstadoNuevo,
     string? Comentario,
-    int? DetalleId);
+    int? DetalleId,
+    string? Producto);
 public record ImpresionDevolverRequest(
     [Required]
     [StringLength(500)]

@@ -28,7 +28,8 @@ public class PedidoFlujoService : IPedidoFlujoService
         string? comentario = null,
         int? detalleId = null,
         int? usuarioId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? producto = null)
     {
         usuarioId ??= CurrentUserId();
         var usuario = await NombreUsuarioAsync(usuarioId, cancellationToken);
@@ -45,7 +46,8 @@ public class PedidoFlujoService : IPedidoFlujoService
             estadoNuevoId ?? string.Empty,
             estados.GetValueOrDefault(estadoNuevoId ?? string.Empty, estadoNuevoId ?? "Sin estado"),
             string.IsNullOrWhiteSpace(comentario) ? null : comentario.Trim(),
-            detalleId));
+            detalleId,
+            string.IsNullOrWhiteSpace(producto) ? null : producto.Trim()));
 
         pedido.FlujoJson = JsonSerializer.Serialize(eventos, JsonOptions);
     }

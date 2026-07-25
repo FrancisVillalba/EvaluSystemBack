@@ -362,6 +362,7 @@ public class VentasImpresionController : ControllerBase
         var pedidosCargadosHoy = ventasDelDia.Count;
         var pedidosImpresos = ventasDelDia.Count(x => IsSent(x.EstadoVenta?.Nombre));
         var pedidosPendientesImpresion = ventasDelDia.Count(x => IsPendingPrint(x.EstadoVenta?.Nombre));
+        var pedidosControl = ventasDelDia.Count(x => string.Equals(x.EstadoVentaId, "CO", StringComparison.OrdinalIgnoreCase));
         var pedidosEntregadosHoy = ventasDelDia.Count(x => IsDelivered(x.EstadoVenta?.Nombre));
         var pedidosPorMaquina = ventasDelDia
             .SelectMany(x => x.Detalles.Select(d => new
@@ -437,11 +438,21 @@ public class VentasImpresionController : ControllerBase
             .Take(7)
             .ToList();
 
+        var now = DateTime.Now;
+        var etapaCarga = BuildDashboardStage(ventasActivas.Where(x => x.FechaCreacion.Date == now.Date), now, true);
+        var etapaImpresion = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "PI"), now);
+        var etapaControl = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "CO"), now);
+        var etapaPendienteEnvio = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "PE"), now);
+        var etapaEnviados = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "EE"), now, true);
+        var etapaIncidencias = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d =>
+            string.Equals((d.EstadoItem ?? string.Empty).Trim(), "RE", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals((d.EstadoItem ?? string.Empty).Trim(), "DV", StringComparison.OrdinalIgnoreCase))), now);
         return Ok(new DashboardSummaryDto(
             pedidosCargadosHoy,
             pedidosCargadosHoy,
             pedidosImpresos,
             pedidosPendientesImpresion,
+            pedidosControl,
             pedidosEntregadosHoy,
             totalPedidosMensuales,
             metaMensualTotalDto,
@@ -449,7 +460,13 @@ public class VentasImpresionController : ControllerBase
             pedidosMensualesPorMaquina,
             metasMensualesPorMaquina,
             pendientesPago,
-            mejoresVendedores));
+            mejoresVendedores,
+            etapaCarga,
+            etapaImpresion,
+            etapaControl,
+            etapaPendienteEnvio,
+            etapaEnviados,
+            etapaIncidencias));
     }
 
     [HttpGet("dashboard/pedidos")]
@@ -470,16 +487,18 @@ public class VentasImpresionController : ControllerBase
         var normalizedType = (tipo ?? string.Empty).Trim().ToLowerInvariant();
         IEnumerable<Models.VentaImpresionCab> filtered = normalizedType switch
         {
-            "cargados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today),
-            "impresos" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today && IsSent(x.EstadoVenta?.Nombre)),
-            "pendientes-impresion" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today && IsPendingPrint(x.EstadoVenta?.Nombre)),
-            "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today && IsDelivered(x.EstadoVenta?.Nombre)),
+            "carga" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today),
+            "impresion" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "PI"),
+            "pendiente-envio" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "PE"),
+            "control" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "CO"),
+            "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "EE" && x.FechaModificacion.Date == today),
+            "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => (d.EstadoItem ?? string.Empty).Trim() == "RE" || (d.EstadoItem ?? string.Empty).Trim() == "DV")),
             "pendientes-pago" => ventas.Where(x => Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
                 (string.IsNullOrWhiteSpace(cliente) || string.Equals(x.Cliente?.Nombre, cliente, StringComparison.OrdinalIgnoreCase))),
             _ => Array.Empty<Models.VentaImpresionCab>()
         };
 
-        if (normalizedType is not ("cargados" or "impresos" or "pendientes-impresion" or "enviados" or "pendientes-pago"))
+        if (normalizedType is not ("carga" or "impresion" or "control" or "pendiente-envio" or "enviados" or "incidencias" or "pendientes-pago"))
         {
             return BadRequest(new { message = "El tipo de detalle del dashboard no es valido." });
         }
@@ -1164,4 +1183,17 @@ public class VentasImpresionController : ControllerBase
     }
 
     private sealed record FilteredVentasQuery(IQueryable<Models.VentaImpresionCab> Query, bool Forbidden);
+
+    private static DashboardStageDto BuildDashboardStage(
+        IEnumerable<Models.VentaImpresionCab> source,
+        DateTime now,
+        bool totalSoloHoy = false)
+    {
+        var items = source.ToList();
+        var movimientosHoy = items.Count(x => x.FechaModificacion.Date == now.Date || x.FechaCreacion.Date == now.Date);
+        var total = totalSoloHoy ? movimientosHoy : items.Count;
+        var demorados24 = totalSoloHoy ? 0 : items.Count(x => now - (x.FechaModificacion > x.FechaCreacion ? x.FechaModificacion : x.FechaCreacion) >= TimeSpan.FromHours(24));
+        var demorados48 = totalSoloHoy ? 0 : items.Count(x => now - (x.FechaModificacion > x.FechaCreacion ? x.FechaModificacion : x.FechaCreacion) >= TimeSpan.FromHours(48));
+        return new DashboardStageDto(total, movimientosHoy, demorados24, demorados48);
+    }
 }
