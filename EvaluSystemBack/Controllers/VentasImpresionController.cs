@@ -444,9 +444,7 @@ public class VentasImpresionController : ControllerBase
         var etapaControl = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "CO"), now);
         var etapaPendienteEnvio = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "PE"), now);
         var etapaEnviados = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "EE"), now, true);
-        var etapaIncidencias = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d =>
-            string.Equals((d.EstadoItem ?? string.Empty).Trim(), "RE", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals((d.EstadoItem ?? string.Empty).Trim(), "DV", StringComparison.OrdinalIgnoreCase))), now);
+        var etapaIncidencias = BuildDashboardStage(ventasActivas.Where(TieneIncidenciaHistorica), now);
         return Ok(new DashboardSummaryDto(
             pedidosCargadosHoy,
             pedidosCargadosHoy,
@@ -492,7 +490,7 @@ public class VentasImpresionController : ControllerBase
             "pendiente-envio" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "PE"),
             "control" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "CO"),
             "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "EE" && x.FechaModificacion.Date == today),
-            "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => (d.EstadoItem ?? string.Empty).Trim() == "RE" || (d.EstadoItem ?? string.Empty).Trim() == "DV")),
+            "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && TieneIncidenciaHistorica(x)),
             "pendientes-pago" => ventas.Where(x => Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
                 (string.IsNullOrWhiteSpace(cliente) || string.Equals(x.Cliente?.Nombre, cliente, StringComparison.OrdinalIgnoreCase))),
             _ => Array.Empty<Models.VentaImpresionCab>()
@@ -1183,6 +1181,13 @@ public class VentasImpresionController : ControllerBase
     }
 
     private sealed record FilteredVentasQuery(IQueryable<Models.VentaImpresionCab> Query, bool Forbidden);
+
+    private bool TieneIncidenciaHistorica(Models.VentaImpresionCab pedido)
+    {
+        return _pedidoFlujoService.Obtener(pedido).Any(x =>
+            x.Accion.Contains("rechaz", StringComparison.OrdinalIgnoreCase) ||
+            x.Accion.Contains("devuelt", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static DashboardStageDto BuildDashboardStage(
         IEnumerable<Models.VentaImpresionCab> source,

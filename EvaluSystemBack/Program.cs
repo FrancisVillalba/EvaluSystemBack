@@ -150,7 +150,7 @@ var app = builder.Build();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsProduction())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
