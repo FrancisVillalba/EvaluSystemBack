@@ -149,38 +149,59 @@ public class ClientesController : ControllerBase
         }
 
         var documento = request.Documento?.Trim();
-        var tipoDocumentoId = request.TipoDocumentoId?.Trim();
-        var nombre = request.Nombre?.Trim();
         var telefono = request.NroTelefono?.Trim();
+
+        if (!IsValidPhoneNumber(telefono))
+        {
+            return "El telefono debe tener 10 digitos, comenzar con 09 y no contener espacios ni guiones. Ejemplo: 0982161888.";
+        }
 
         if (!string.IsNullOrWhiteSpace(documento))
         {
-            var duplicatedByDocument = await _context.Clientes.AnyAsync(x =>
-                (!currentId.HasValue || x.Id != currentId.Value) &&
-                x.Documento != null &&
-                x.Documento.Trim() == documento &&
-                x.TipoDocumentoId == tipoDocumentoId);
+            var duplicatedByDocument = await _context.Clientes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    (!currentId.HasValue || x.Id != currentId.Value) &&
+                    x.Documento != null &&
+                    x.Documento.Trim() == documento);
 
-            if (duplicatedByDocument)
+            if (duplicatedByDocument is not null)
             {
-                return "Ya existe un cliente con ese documento.";
+                return DuplicateClientMessage(duplicatedByDocument.Nombre, duplicatedByDocument.Id);
             }
         }
-        else if (!string.IsNullOrWhiteSpace(nombre) && !string.IsNullOrWhiteSpace(telefono))
-        {
-            var duplicatedByNameAndPhone = await _context.Clientes.AnyAsync(x =>
-                (!currentId.HasValue || x.Id != currentId.Value) &&
-                x.Nombre != null &&
-                x.NroTelefono != null &&
-                x.Nombre.Trim().ToLower() == nombre.ToLower() &&
-                x.NroTelefono.Trim() == telefono);
 
-            if (duplicatedByNameAndPhone)
+        if (!string.IsNullOrWhiteSpace(telefono))
+        {
+            var duplicatedByPhone = await _context.Clientes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x =>
+                    (!currentId.HasValue || x.Id != currentId.Value) &&
+                    x.NroTelefono != null &&
+                    x.NroTelefono.Trim() == telefono);
+
+            if (duplicatedByPhone is not null)
             {
-                return "Ya existe un cliente con ese nombre y telefono.";
+                return DuplicateClientMessage(duplicatedByPhone.Nombre, duplicatedByPhone.Id);
             }
         }
 
         return null;
     }
-}
+
+    private static bool IsValidPhoneNumber(string? phoneNumber)
+    {
+        return phoneNumber is not null &&
+            phoneNumber.Length == 10 &&
+            phoneNumber.StartsWith("09", StringComparison.Ordinal) &&
+            phoneNumber.All(char.IsDigit);
+    }
+
+    private static string DuplicateClientMessage(string? name, int id)
+    {
+        var registeredName = string.IsNullOrWhiteSpace(name)
+            ? $"Cliente {id}"
+            : name.Trim();
+
+        return $"Cliente duplicado, el cliente registrado se guardo con el nombre: {registeredName}";
+    }}
