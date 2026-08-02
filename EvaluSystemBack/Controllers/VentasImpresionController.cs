@@ -21,6 +21,12 @@ public class VentasImpresionController : ControllerBase
     private const string ConfigMontoEnvioTransportadora = "MONTO_ENVIO_TRANSPORTADORA";
     private const int ConfigMontoEnvioTransportadoraNumero = 1;
     private const decimal MontoEnvioTransportadoraDefault = 10000;
+    private const string ConfigCmPrecioMayorOMenor = "CM_PRECIO_MAYOR_O_MENOR";
+    private const int ConfigCmPrecioMayorOMenorNumero = 1;
+    private const decimal CmPrecioMayorOMenorDefault = 0.50m;
+    private const string ConfigCompraMinimaCm = "COMPRA_MINIMA_CM";
+    private const int ConfigCompraMinimaCmNumero = 1;
+    private const decimal CompraMinimaCmDefault = 0.20m;
 
     private readonly EvaluSystemDbContext _context;
     private readonly IVentaImpresionService _ventaImpresionService;
@@ -148,6 +154,8 @@ public class VentasImpresionController : ControllerBase
             .ToListAsync();
         var maquinas = await _context.TiposMaquina.AsNoTracking().Where(x => x.Estado).ToListAsync();
         var montoEnvioTransportadora = await MontoEnvioTransportadoraAsync();
+        var cmPrecioMayorOMenor = await CmPrecioMayorOMenorAsync();
+        var compraMinimaCm = await CompraMinimaCmAsync();
 
         return Ok(new VentaImpresionOptionsDto(
             clientes.Select(x => x.ToDto()),
@@ -160,7 +168,51 @@ public class VentasImpresionController : ControllerBase
             currentUserId,
             canViewAll,
             canViewUserSales,
-            montoEnvioTransportadora));
+            montoEnvioTransportadora,
+            cmPrecioMayorOMenor,
+            compraMinimaCm));
+    }
+
+    private async Task<decimal> CompraMinimaCmAsync()
+    {
+        var valor = await _configuracionService.ObtenerValorAsync(
+            ConfigCompraMinimaCm,
+            ConfigCompraMinimaCmNumero);
+        var valorNormalizado = valor?.Trim().Replace(',', '.');
+
+        if (decimal.TryParse(valorNormalizado, NumberStyles.Number, CultureInfo.InvariantCulture, out var minimo)
+            && minimo > 0)
+        {
+            return minimo;
+        }
+
+        await _configuracionService.SaveAsync(new ConfiguracionRequest(
+            ConfigCompraMinimaCm,
+            ConfigCompraMinimaCmNumero,
+            CompraMinimaCmDefault.ToString(CultureInfo.InvariantCulture)));
+
+        return CompraMinimaCmDefault;
+    }
+
+    private async Task<decimal> CmPrecioMayorOMenorAsync()
+    {
+        var valor = await _configuracionService.ObtenerValorAsync(
+            ConfigCmPrecioMayorOMenor,
+            ConfigCmPrecioMayorOMenorNumero);
+
+        var valorNormalizado = valor?.Trim().Replace(',', '.');
+        if (decimal.TryParse(valorNormalizado, NumberStyles.Number, CultureInfo.InvariantCulture, out var limite)
+            && limite > 0)
+        {
+            return limite;
+        }
+
+        await _configuracionService.SaveAsync(new ConfiguracionRequest(
+            ConfigCmPrecioMayorOMenor,
+            ConfigCmPrecioMayorOMenorNumero,
+            CmPrecioMayorOMenorDefault.ToString(CultureInfo.InvariantCulture)));
+
+        return CmPrecioMayorOMenorDefault;
     }
 
     private async Task<decimal> MontoEnvioTransportadoraAsync()

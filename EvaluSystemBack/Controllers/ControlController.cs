@@ -63,7 +63,25 @@ public class ControlController : ControllerBase
             .Take(300)
             .ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        var vendedorIds = pedidos.Select(x => x.VendedorId).Distinct().ToArray();
+        var vendedores = await _context.Usuarios
+            .AsNoTracking()
+            .Where(usuario => vendedorIds.Contains(usuario.Id))
+            .Select(usuario => new
+            {
+                usuario.Id,
+                Nombre = usuario.Persona == null
+                    ? usuario.NombreUsuario ?? "Sin vendedor"
+                    : ((usuario.Persona.PrimerNombre ?? "") + " " +
+                       (usuario.Persona.SegundoNombre ?? "") + " " +
+                       (usuario.Persona.PrimerApellido ?? "") + " " +
+                       (usuario.Persona.SegundoApellido ?? "")).Trim()
+            })
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre, cancellationToken);
+
+        return Ok(pedidos.Select(pedido => ToDto(
+            pedido,
+            vendedores.TryGetValue(pedido.VendedorId, out var vendedor) ? vendedor : "Sin vendedor")));
     }
 
 
@@ -383,13 +401,14 @@ public class ControlController : ControllerBase
     {
         return string.Equals((estadoItem ?? string.Empty).Trim(), esperado, StringComparison.OrdinalIgnoreCase);
     }
-    private static ControlPedidoDto ToDto(VentaImpresionCab pedido)
+    private static ControlPedidoDto ToDto(VentaImpresionCab pedido, string vendedor = "Sin vendedor")
     {
         return new ControlPedidoDto(
             pedido.Id,
             pedido.FechaCreacion,
             pedido.FechaEntrega,
             pedido.Cliente?.Nombre ?? string.Empty,
+            vendedor,
             pedido.EstadoVentaId,
             pedido.EstadoVenta?.Nombre,
             pedido.MetodoEntrega,
@@ -411,6 +430,7 @@ public class ControlController : ControllerBase
             detalle.TipoMaquina?.Nombre ?? $"Maquina {detalle.TipoMaquinaId}",
             detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}",
             detalle.Cantidad,
+            detalle.ArchivoDisenioNombre,
             detalle.Observacion,
             detalle.EstadoItem,
             detalle.CheckImpresion == true);

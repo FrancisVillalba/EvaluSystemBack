@@ -4,6 +4,7 @@ using EvaluSystemBack.Mapping;
 using EvaluSystemBack.Models;
 using EvaluSystemBack.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace EvaluSystemBack.Services;
 
@@ -19,6 +20,9 @@ public class VentaImpresionService : IVentaImpresionService
     private const string EstadoPagoPendiente = "P1";
     private const string EstadoPagoParcial = "P2";
     private const string EstadoPagoPagado = "P3";
+    private const string ConfigCompraMinimaCm = "COMPRA_MINIMA_CM";
+    private const int ConfigCompraMinimaCmNumero = 1;
+    private const decimal CompraMinimaCmDefault = 0.20m;
 
     private const string MetodoEntregaDelivery = "DELIVERY";
     private const string MetodoEntregaTransportadora = "TRANSPORTADORA";
@@ -635,9 +639,10 @@ public class VentaImpresionService : IVentaImpresionService
         decimal precioUnitario,
         decimal? precioExtra)
     {
-        if (cantidad <= 0)
+        var compraMinimaCm = await CompraMinimaCmAsync();
+        if (cantidad < compraMinimaCm)
         {
-            throw new InvalidOperationException("La cantidad debe ser mayor a cero.");
+            throw new InvalidOperationException($"La compra minima es de {compraMinimaCm:N2} cm.");
         }
 
         if (precioUnitario < 0 || precioExtra < 0)
@@ -1016,6 +1021,27 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.TotalVenta = totalDetalles + cabecera.MontoEnvioTransportadora;
 
         await _context.SaveChangesAsync();
+    }
+
+    private async Task<decimal> CompraMinimaCmAsync()
+    {
+        var valor = await _configuracionService.ObtenerValorAsync(
+            ConfigCompraMinimaCm,
+            ConfigCompraMinimaCmNumero);
+        var valorNormalizado = valor?.Trim().Replace(',', '.');
+
+        if (decimal.TryParse(valorNormalizado, NumberStyles.Number, CultureInfo.InvariantCulture, out var minimo)
+            && minimo > 0)
+        {
+            return minimo;
+        }
+
+        await _configuracionService.SaveAsync(new ConfiguracionRequest(
+            ConfigCompraMinimaCm,
+            ConfigCompraMinimaCmNumero,
+            CompraMinimaCmDefault.ToString(CultureInfo.InvariantCulture)));
+
+        return CompraMinimaCmDefault;
     }
 
     private static decimal CalcularTotalDetalle(decimal cantidad, decimal precioUnitario, decimal? precioExtra)

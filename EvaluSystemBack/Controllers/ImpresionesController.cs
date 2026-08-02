@@ -85,6 +85,15 @@ public class ImpresionesController : ControllerBase
                 x.Cabecera!.FechaCreacion,
                 x.Cabecera.FechaEntrega,
                 x.Cabecera.Cliente != null ? x.Cabecera.Cliente.Nombre ?? string.Empty : string.Empty,
+                _context.Usuarios
+                    .Where(usuario => usuario.Id == x.Cabecera.VendedorId)
+                    .Select(usuario => usuario.Persona == null
+                        ? usuario.NombreUsuario ?? "Sin vendedor"
+                        : ((usuario.Persona.PrimerNombre ?? "") + " " +
+                           (usuario.Persona.SegundoNombre ?? "") + " " +
+                           (usuario.Persona.PrimerApellido ?? "") + " " +
+                           (usuario.Persona.SegundoApellido ?? "")).Trim())
+                    .FirstOrDefault() ?? "Sin vendedor",
                 x.TipoMaquinaId,
                 x.TipoMaquina != null ? x.TipoMaquina.Nombre : "Sin maquina",
                 x.Producto != null ? x.Producto.Nombre : "Sin producto",

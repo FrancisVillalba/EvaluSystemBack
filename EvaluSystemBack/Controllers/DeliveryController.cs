@@ -45,7 +45,7 @@ public class DeliveryController : ControllerBase
             .Take(100)
             .ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        return Ok(pedidos.Select(pedido => ToDto(pedido)));
     }
 
     [HttpGet("transportadora")]
@@ -53,7 +53,7 @@ public class DeliveryController : ControllerBase
     {
         var pedidos = await PendingByMethodAsync(MetodoEntregaTransportadora, cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        return Ok(pedidos.Select(pedido => ToDto(pedido)));
     }
 
     [HttpGet("motobolt")]
@@ -61,7 +61,7 @@ public class DeliveryController : ControllerBase
     {
         var pedidos = await PendingByMethodAsync(MetodoEntregaMotobolt, cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        return Ok(pedidos.Select(pedido => ToDto(pedido)));
     }
 
     [HttpGet("retiro-local")]
@@ -69,7 +69,7 @@ public class DeliveryController : ControllerBase
     {
         var pedidos = await PendingByMethodAsync(MetodoEntregaRetiroLocal, cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        return Ok(pedidos.Select(pedido => ToDto(pedido)));
     }
 
     [HttpGet("mis-pedidos")]
@@ -89,7 +89,7 @@ public class DeliveryController : ControllerBase
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        return Ok(pedidos.Select(pedido => ToDto(pedido)));
     }
 
     [HttpGet("mis-rutas")]
@@ -162,7 +162,7 @@ public class DeliveryController : ControllerBase
             .Take(500)
             .ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(ToDto));
+        return Ok(pedidos.Select(pedido => ToDto(pedido)));
     }
 
     [HttpGet("resumen")]
@@ -231,7 +231,8 @@ public class DeliveryController : ControllerBase
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == userId.Value, cancellationToken);
 
-        var dtos = pedidos.Select(ToDto).ToList();
+        var vendedores = await LoadVendedoresAsync(pedidos, cancellationToken);
+        var dtos = pedidos.Select(pedido => ToDto(pedido, vendedores)).ToList();
         var deliveryName = usuario is null ? $"Usuario {userId.Value}" : NombreUsuario(usuario);
         var bytes = DeliveryRoutePdfBuilder.Build(deliveryName, dtos, DateRangeLabel(desde, fechaHasta?.Date));
 
@@ -335,11 +336,13 @@ public class DeliveryController : ControllerBase
             return Forbid();
         }
 
-        var pedidos = ruta.Detalles
+        var ventas = ruta.Detalles
             .Select(x => x.Venta)
             .Where(x => x is not null)
-            .Select(x => ToDto(x!))
+            .Select(x => x!)
             .ToList();
+        var vendedores = await LoadVendedoresAsync(ventas, cancellationToken);
+        var pedidos = ventas.Select(pedido => ToDto(pedido, vendedores)).ToList();
         var deliveryName = ruta.UsuarioDelivery is null ? $"Usuario {ruta.UsuarioDeliveryId}" : NombreUsuario(ruta.UsuarioDelivery);
         var label = $"Lote {ruta.NumeroLote} - {ruta.FechaGeneracion:dd/MM/yyyy HH:mm}";
         var bytes = DeliveryRoutePdfBuilder.Build(deliveryName, pedidos, label);
@@ -359,11 +362,6 @@ public class DeliveryController : ControllerBase
         if (pedido is null)
         {
             return NotFound(new { message = "No se encontro el pedido." });
-        }
-
-        if (!string.Equals(pedido.MetodoEntrega, MetodoEntregaTransportadora, StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(new { message = "La etiqueta solo esta disponible para pedidos con envio por transportadora." });
         }
 
         var bytes = TransportadoraEtiquetaPdfBuilder.Build(pedido);
@@ -621,6 +619,7 @@ public class DeliveryController : ControllerBase
             .Include(x => x.Cliente)
                 .ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.EstadoVenta)
+            .Include(x => x.MetodoEnvio)
             .Include(x => x.UsuarioEntregaPedido).ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina);
@@ -699,7 +698,22 @@ public class DeliveryController : ControllerBase
         return int.TryParse(value, out var userId) ? userId : null;
     }
 
-    private static DeliveryPedidoDto ToDto(VentaImpresionCab pedido)
+    private async Task<Dictionary<int, string>> LoadVendedoresAsync(IEnumerable<VentaImpresionCab> pedidos, CancellationToken cancellationToken)
+    {
+        var vendedorIds = pedidos.Select(x => x.VendedorId).Distinct().ToArray();
+        return await _context.Usuarios
+            .AsNoTracking()
+            .Where(usuario => vendedorIds.Contains(usuario.Id))
+            .Select(usuario => new
+            {
+                usuario.Id,
+                Nombre = usuario.Persona == null
+                    ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}"
+                    : ((usuario.Persona.PrimerNombre ?? "") + " " + (usuario.Persona.PrimerApellido ?? "")).Trim()
+            })
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre, cancellationToken);
+    }
+    private static DeliveryPedidoDto ToDto(VentaImpresionCab pedido, IReadOnlyDictionary<int, string>? vendedores = null)
     {
         return new DeliveryPedidoDto(
             pedido.Id,
@@ -712,7 +726,7 @@ public class DeliveryController : ControllerBase
             pedido.Cliente?.DatosEnvio?.Ciudad?.Nombre ?? pedido.Cliente?.Ciudad?.Nombre,
             pedido.EstadoVentaId,
             pedido.EstadoVenta?.Nombre,
-            $"Usuario {pedido.VendedorId}",
+            vendedores is not null && vendedores.TryGetValue(pedido.VendedorId, out var vendedor) ? vendedor : $"Usuario {pedido.VendedorId}",
             pedido.TotalVenta,
             pedido.MetodoEntrega ?? MetodoEntregaDelivery,
             MetodoEntregaLabel(pedido.MetodoEntrega),
@@ -798,22 +812,29 @@ public class DeliveryController : ControllerBase
         public static byte[] Build(VentaImpresionCab pedido)
         {
             var envio = pedido.Cliente?.DatosEnvio;
+            var esTransportadora = string.Equals(pedido.MetodoEntrega, MetodoEntregaTransportadora, StringComparison.OrdinalIgnoreCase);
+            var etiquetaMetodo = esTransportadora ? "TRANSPORTADORA:" : "ENVIO:";
+            var valorMetodo = esTransportadora
+                ? envio?.Transportadora?.Nombre ?? pedido.MetodoEnvio?.Nombre ?? "S/D"
+                : pedido.MetodoEnvio?.Nombre ?? pedido.MetodoEntrega ?? "S/D";
+            var anchoEtiquetaMetodo = esTransportadora ? 105 : 45;
             var builder = new StringBuilder();
-            Text(builder, 10, 119, $"PEDIDO #{pedido.Id}", 10);
-            LabelValue(builder, 10, 96, "RECIBE:", Trim(envio?.NombreReceptor ?? pedido.Cliente?.Nombre ?? "S/D", 22), 47);
-            LabelValue(builder, 10, 73, "DOC:", Trim(envio?.DocumentoReceptor ?? "S/D", 16), 31);
-            LabelValue(builder, 122, 73, "TEL:", Trim(envio?.TelefonoReceptor ?? pedido.Cliente?.NroTelefono ?? "S/D", 14), 27);
-            LabelValue(builder, 10, 51, "DEPARTAMENTO:", Trim(envio?.Departamento?.Nombre ?? pedido.Cliente?.Departamento?.Nombre ?? "S/D", 20), 94);
-            LabelValue(builder, 10, 29, "CIUDAD:", Trim(envio?.Ciudad?.Nombre ?? pedido.Cliente?.Ciudad?.Nombre ?? "S/D", 24), 54);
-            LabelValue(builder, 10, 8, "DIR:", Trim(envio?.Direccion ?? pedido.Cliente?.Direccion ?? string.Empty, 32), 31);
+            Text(builder, 10, 118, $"PEDIDO #{pedido.Id}", 12, bold: true);
+            LabelValue(builder, 10, 98, "RECIBE:", Trim(envio?.NombreReceptor ?? pedido.Cliente?.Nombre ?? "S/D", 22), 52);
+            LabelValue(builder, 10, 80, "DOC:", Trim(envio?.DocumentoReceptor ?? "S/D", 15), 35);
+            LabelValue(builder, 122, 80, "TEL:", Trim(envio?.TelefonoReceptor ?? pedido.Cliente?.NroTelefono ?? "S/D", 13), 30);
+            LabelValue(builder, 10, 62, "DEPARTAMENTO:", Trim(envio?.Departamento?.Nombre ?? pedido.Cliente?.Departamento?.Nombre ?? "S/D", 18), 104);
+            LabelValue(builder, 10, 44, "CIUDAD:", Trim(envio?.Ciudad?.Nombre ?? pedido.Cliente?.Ciudad?.Nombre ?? "S/D", 22), 60);
+            LabelValue(builder, 10, 26, "DIR:", Trim(envio?.Direccion ?? pedido.Cliente?.Direccion ?? string.Empty, 30), 35);
+            LabelValue(builder, 10, 8, etiquetaMetodo, Trim(valorMetodo, esTransportadora ? 16 : 26), anchoEtiquetaMetodo);
 
             return WritePdf(builder.ToString());
         }
 
         private static void LabelValue(StringBuilder builder, double x, double y, string label, string value, double labelWidth)
         {
-            Text(builder, x, y, label, 9, bold: true);
-            Text(builder, x + labelWidth, y, value, 9);
+            Text(builder, x, y, label, 10, bold: true);
+            Text(builder, x + labelWidth, y, value, 10);
         }
 
         private static void Text(StringBuilder builder, double x, double y, string text, int size, bool bold = false)
@@ -1026,21 +1047,24 @@ public class DeliveryController : ControllerBase
         {
             FillRect(builder, MarginX, y, 505, 14, TealR, TealG, TealB);
             Text(builder, MarginX + 8, y + 4, "Nro. Pedido", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 93, y + 4, "Nombre", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 255, y + 4, "Telefono", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 365, y + 4, "Producto", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 68, y + 4, "Nombre", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 193, y + 4, "Vendedor", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 303, y + 4, "Telefono", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 368, y + 4, "Producto", 7, bold: true, color: (1, 1, 1));
         }
 
         private static void DrawTableRow(StringBuilder builder, double y, DeliveryPedidoDto pedido)
         {
-            StrokeRect(builder, MarginX, y, 75, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 75, y, 160, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 235, y, 105, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 340, y, 165, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX, y, 60, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 60, y, 125, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 185, y, 110, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 295, y, 65, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 360, y, 145, 15, 0.78, 0.86, 0.92);
             Text(builder, MarginX + 8, y + 4, pedido.Id.ToString(CultureInfo.InvariantCulture), 7);
-            Text(builder, MarginX + 83, y + 4, Truncate(pedido.Cliente, 24), 7);
-            Text(builder, MarginX + 243, y + 4, Truncate(pedido.Telefono ?? "S/D", 15), 7);
-            Text(builder, MarginX + 348, y + 4, Truncate(pedido.Productos, 28), 7);
+            Text(builder, MarginX + 68, y + 4, Truncate(pedido.Cliente, 18), 7);
+            Text(builder, MarginX + 193, y + 4, Truncate(pedido.Vendedor, 20), 7);
+            Text(builder, MarginX + 303, y + 4, Truncate(pedido.Telefono ?? "S/D", 11), 7);
+            Text(builder, MarginX + 368, y + 4, Truncate(pedido.Productos, 24), 7);
         }
 
         private static byte[] WritePdf(IReadOnlyList<string> pageContents)
