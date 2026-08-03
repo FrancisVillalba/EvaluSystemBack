@@ -34,7 +34,19 @@ public class PersonasController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<PersonaDto>> Create(PersonaRequest request)
     {
+        var documento = request.Documento?.Trim();
+        if (!string.IsNullOrWhiteSpace(documento))
+        {
+            var exists = await _context.Personas
+                .AnyAsync(x => x.Documento == documento);
+            if (exists)
+            {
+                return BadRequest(new { message = "Ya existe una persona con ese numero de cedula." });
+            }
+        }
+
         var item = request.ToEntity();
+        item.Documento = documento;
         _context.Personas.Add(item);
         await _context.SaveChangesAsync();
         return CreatedAtAction(nameof(GetById), new { id = item.Id }, item.ToDto());

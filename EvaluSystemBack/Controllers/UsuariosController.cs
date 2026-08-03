@@ -48,7 +48,16 @@ public class UsuariosController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<UsuarioDto>> Create(UsuarioRequest request)
     {
+        var nombreUsuario = request.NombreUsuario!.Trim();
+        var exists = await _context.Usuarios
+            .AnyAsync(x => x.NombreUsuario == nombreUsuario);
+        if (exists)
+        {
+            return BadRequest(new { message = "Ya existe un usuario con ese nombre de usuario." });
+        }
+
         var item = request.ToEntity();
+        item.NombreUsuario = nombreUsuario;
         if (!string.IsNullOrWhiteSpace(request.Pass))
         {
             item.PassHash = _passwordService.HashPassword(request.Pass);
