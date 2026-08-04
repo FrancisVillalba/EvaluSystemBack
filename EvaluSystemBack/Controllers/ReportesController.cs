@@ -34,9 +34,10 @@ public class ReportesController : ControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? vendedorId = null,
-        [FromQuery] string? scope = null)
+        [FromQuery] string? scope = null,
+        [FromQuery] int? perfilId = null)
     {
-        return Ok(await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope));
+        return Ok(await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope, perfilId));
     }
 
     [HttpGet("comisiones-vendedores/excel")]
@@ -44,9 +45,10 @@ public class ReportesController : ControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? vendedorId = null,
-        [FromQuery] string? scope = null)
+        [FromQuery] string? scope = null,
+        [FromQuery] int? perfilId = null)
     {
-        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
+        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope, perfilId);
         var bytes = BuildComisionesXlsx(report);
         var sellerFilePart = await ReportFileSellerNameAsync(vendedorId, report);
 
@@ -61,9 +63,10 @@ public class ReportesController : ControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? vendedorId = null,
-        [FromQuery] string? scope = null)
+        [FromQuery] string? scope = null,
+        [FromQuery] int? perfilId = null)
     {
-        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
+        var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope, perfilId);
         var bytes = CommissionPdfBuilder.Build(report, _environment.WebRootPath, IsTeamLeaderCommissionsScope(scope));
         var sellerFilePart = await ReportFileSellerNameAsync(vendedorId, report);
 
@@ -78,11 +81,12 @@ public class ReportesController : ControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? vendedorId = null,
-        [FromQuery] string? scope = null)
+        [FromQuery] string? scope = null,
+        [FromQuery] int? perfilId = null)
     {
         try
         {
-            var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope);
+            var report = await BuildComisionesAsync(dateFrom, dateTo, vendedorId, scope, perfilId);
             var lote = await GetOrCreateComisionesLoteAsync(report, vendedorId, scope);
 
             return Ok(new ExcelFileDto(
@@ -175,6 +179,72 @@ public class ReportesController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet("clientes-deuda")]
+    public async Task<ActionResult<ReporteClientesDeudaDto>> GetClientesDeuda(
+        [FromQuery] DateTime? dateFrom = null,
+        [FromQuery] DateTime? dateTo = null,
+        [FromQuery] string? cliente = null,
+        [FromQuery] string? estadoPago = null)
+    {
+        var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
+        var to = (dateTo ?? DateTime.Today).Date;
+        var toExclusive = to.AddDays(1);
+        var clientSearch = (cliente ?? string.Empty).Trim();
+        var paymentStatus = (estadoPago ?? string.Empty).Trim().ToUpperInvariant();
+
+        var ventas = await _context.VentasImpresionCab
+            .Include(x => x.Cliente)
+            .Include(x => x.EstadoPago)
+            .Include(x => x.EstadoVenta)
+            .AsNoTracking()
+            .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
+            .Where(x => !x.Reposicion)
+            .Where(x => x.EstadoPagadoId == "P1" || x.EstadoPagadoId == "P2")
+            .Where(x => string.IsNullOrWhiteSpace(paymentStatus) || x.EstadoPagadoId == paymentStatus)
+            .OrderBy(x => x.ClienteId)
+            .ThenByDescending(x => x.FechaCreacion)
+            .ToListAsync();
+
+        ventas = ventas
+            .Where(x => x.EstadoVenta?.Nombre?.Contains("elimin", StringComparison.OrdinalIgnoreCase) != true)
+            .Where(x => string.IsNullOrWhiteSpace(clientSearch) ||
+                (x.Cliente?.Nombre ?? string.Empty).Contains(clientSearch, StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.TotalVenta - (x.MontoPagado ?? 0) > 0)
+            .ToList();
+
+        var clientes = ventas
+            .GroupBy(x => new
+            {
+                x.ClienteId,
+                Cliente = x.Cliente?.Nombre ?? $"Cliente {x.ClienteId}",
+                Telefono = x.Cliente?.NroTelefono
+            })
+            .Select(group =>
+            {
+                var pedidos = group.Select(x => new ReporteClienteDeudaPedidoDto(
+                    x.Id,
+                    x.FechaCreacion,
+                    x.TotalVenta,
+                    x.MontoPagado ?? 0,
+                    Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0),
+                    x.EstadoPago?.Nombre ?? (x.EstadoPagadoId == "P2" ? "Pago parcial" : "Pendiente de pago")))
+                    .OrderByDescending(x => x.Fecha)
+                    .ToList();
+                var estados = pedidos.Select(x => x.EstadoPago).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                return new ReporteClienteDeudaDto(
+                    group.Key.ClienteId, group.Key.Cliente, group.Key.Telefono, pedidos.Count,
+                    pedidos.Sum(x => x.TotalVenta), pedidos.Sum(x => x.MontoPagado),
+                    pedidos.Sum(x => x.SaldoPendiente), pedidos.Max(x => x.Fecha),
+                    estados.Count == 1 ? estados[0] : "Pendiente / Parcial", pedidos);
+            })
+            .OrderByDescending(x => x.SaldoPendiente)
+            .ToList();
+
+        return Ok(new ReporteClientesDeudaDto(
+            from, to, clientes.Sum(x => x.SaldoPendiente), clientes.Count,
+            clientes.Sum(x => x.CantidadPedidos), clientes.Sum(x => x.TotalVendido),
+            clientes.Sum(x => x.TotalPagado), clientes));
+    }
     [HttpGet("envios")]
     public async Task<ActionResult<ReporteEnviosDto>> GetReporteEnvios(
         [FromQuery] DateTime? dateFrom = null,
@@ -338,7 +408,7 @@ public class ReportesController : ControllerBase
             reporte.Vendedores.Sum(x => x.TotalVenta));
     }
 
-    private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId, string? scope = null)
+    private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId, string? scope = null, int? perfilId = null)
     {
         var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var to = (dateTo ?? DateTime.Today).Date;
@@ -351,7 +421,7 @@ public class ReportesController : ControllerBase
             .Include(x => x.EstadoVenta)
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
-            .Where(x => vendedorId == null || scopeTeamLeaders || x.VendedorId == vendedorId.Value)
+            .Where(x => vendedorId == null || scopeTeamLeaders || perfilId != null || x.VendedorId == vendedorId.Value)
             .Where(x => !x.Reposicion)
             .Where(x => EstadosVentaComisionables.Contains(x.EstadoVentaId))
             .OrderBy(x => x.VendedorId)
@@ -380,6 +450,14 @@ public class ReportesController : ControllerBase
             .Select(x => x.UsuarioId)
             .Distinct()
             .ToHashSet();
+        var perfilSeleccionado = perfilId.HasValue
+            ? perfilesUsuario.FirstOrDefault(x => x.PerfilId == perfilId.Value)?.Perfil
+            : null;
+        scopeTeamLeaders = scopeTeamLeaders ||
+            (perfilId.HasValue && perfilSeleccionado?.Contains("team leader", StringComparison.OrdinalIgnoreCase) == true);
+        var usuariosPerfilSeleccionado = perfilId.HasValue
+            ? perfilesUsuario.Where(x => x.PerfilId == perfilId.Value).Select(x => x.UsuarioId).ToHashSet()
+            : new HashSet<int>();
         var comisiones = await _context.ProductoComisiones
             .AsNoTracking()
             .Where(x => x.Estado)
@@ -397,13 +475,16 @@ public class ReportesController : ControllerBase
         ventas = ventas
             .Where(x => scopeExternos || scopeTeamLeaders
                 ? vendedoresExternos.Contains(x.VendedorId)
-                : usuariosPerfilVendedor.Contains(x.VendedorId) && !vendedoresExternos.Contains(x.VendedorId))
+                : perfilId.HasValue
+                    ? usuariosPerfilSeleccionado.Contains(x.VendedorId)
+                    : usuariosPerfilVendedor.Contains(x.VendedorId) && !vendedoresExternos.Contains(x.VendedorId))
+            .Where(x => !perfilId.HasValue || scopeTeamLeaders || vendedorId == null || x.VendedorId == vendedorId.Value)
             .ToList();
 
         var detallesComision = new List<(int UsuarioId, ReporteComisionDetalleDto Detalle)>();
         if (scopeTeamLeaders)
         {
-            var teamLeaderPerfilId = await ProfileIdAsync("Team Leader");
+            var teamLeaderPerfilId = perfilId ?? await ProfileIdAsync("Team Leader");
             var vendedoresExternosNombres = vendedores;
             foreach (var venta in ventas)
             {
@@ -435,7 +516,10 @@ public class ReportesController : ControllerBase
             {
                 foreach (var detalle in venta.Detalles.Where(EsDetalleComisionable))
                 {
-                    detallesComision.Add((venta.VendedorId, BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true)));
+                    var detalleComision = perfilId.HasValue
+                        ? BuildComisionDetallePorPerfil(venta, detalle, perfilId.Value, comisiones, incluirExtra: true)
+                        : BuildComisionDetalle(venta, detalle, venta.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true);
+                    detallesComision.Add((venta.VendedorId, detalleComision));
                 }
             }
         }

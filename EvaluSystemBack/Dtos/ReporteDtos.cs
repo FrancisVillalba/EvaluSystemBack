@@ -67,6 +67,35 @@ public record ReporteEnvioDetalleDto(
     string? Ciudad,
     decimal TotalPedido,
     decimal ComisionDelivery);
+public record ReporteClientesDeudaDto(
+    DateTime FechaDesde,
+    DateTime FechaHasta,
+    decimal DeudaTotal,
+    int CantidadClientes,
+    int CantidadPedidos,
+    decimal TotalVendido,
+    decimal TotalPagado,
+    IEnumerable<ReporteClienteDeudaDto> Clientes);
+
+public record ReporteClienteDeudaDto(
+    int ClienteId,
+    string Cliente,
+    string? Telefono,
+    int CantidadPedidos,
+    decimal TotalVendido,
+    decimal TotalPagado,
+    decimal SaldoPendiente,
+    DateTime UltimoPedido,
+    string Estado,
+    IEnumerable<ReporteClienteDeudaPedidoDto> Pedidos);
+
+public record ReporteClienteDeudaPedidoDto(
+    int PedidoId,
+    DateTime Fecha,
+    decimal TotalVenta,
+    decimal MontoPagado,
+    decimal SaldoPendiente,
+    string EstadoPago);
 
 public record ReporteResumenGerencialDto(
     DateTime FechaDesde,
