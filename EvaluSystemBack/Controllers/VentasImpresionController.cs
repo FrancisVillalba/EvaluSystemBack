@@ -127,6 +127,7 @@ public class VentasImpresionController : ControllerBase
         var allowedSellerIds = await CurrentUserSellerIdsAsync();
         var canViewUserSales = canViewAll || (currentUserId.HasValue &&
             (await UserHasProfileAsync(currentUserId.Value, "Ventas") ||
+             await UserHasProfileAsync(currentUserId.Value, "Venta Externa") ||
              await UserHasProfileAsync(currentUserId.Value, "Team Leader")));
 
         var clientes = await _context.Clientes
@@ -255,6 +256,7 @@ public class VentasImpresionController : ControllerBase
         var allowedSellerIds = await CurrentUserSellerIdsAsync();
         if (!canViewAll &&
             !await UserHasProfileAsync(currentUserId.Value, "Ventas") &&
+            !await UserHasProfileAsync(currentUserId.Value, "Venta Externa") &&
             !await UserHasProfileAsync(currentUserId.Value, "Team Leader"))
         {
             var today = DateTime.Today;
@@ -327,9 +329,8 @@ public class VentasImpresionController : ControllerBase
         var items = ventas.Select(venta =>
         {
             var totalMetros = venta.Detalles.Sum(detalle => detalle.Cantidad);
-            var perfilComisionId = canViewAll
-                ? SellerCommissionProfileId(venta.VendedorId, perfilesPorUsuario, perfilVentasId, perfilVentaExternaId)
-                : perfilVentasId;
+            var perfilComisionId = SellerCommissionProfileId(
+                venta.VendedorId, perfilesPorUsuario, perfilVentasId, perfilVentaExternaId);
             var totalComision = EstadosVentaComisionables.Contains(venta.EstadoVentaId)
                 ? venta.Detalles.Where(EsDetalleComisionable).Sum(detalle =>
                     detalle.Cantidad * ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
