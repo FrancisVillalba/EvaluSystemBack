@@ -36,16 +36,14 @@ END
         await _context.Database.ExecuteSqlRawAsync(sql, cancellationToken);
     }
 
-    public async Task CrearParaTodosAsync(string tipo, string titulo, string mensaje, int pedidoId, int? detalleId, string? producto, string? comentario, CancellationToken cancellationToken)
+    public async Task CrearParaUsuarioAsync(int usuarioId, string tipo, string titulo, string mensaje, int pedidoId, int? detalleId, string? producto, string? comentario, CancellationToken cancellationToken)
     {
         await AsegurarTablaAsync(cancellationToken);
-        var usuarios = await _context.Usuarios.AsNoTracking().Where(x => x.Estado != false).Select(x => x.Id).ToListAsync(cancellationToken);
-        var fecha = DateTime.Now;
-        _context.Notificaciones.AddRange(usuarios.Select(usuarioId => new Notificacion
+        _context.Notificaciones.Add(new Notificacion
         {
             UsuarioId = usuarioId, Tipo = tipo, Titulo = titulo, Mensaje = mensaje,
             PedidoId = pedidoId, DetalleId = detalleId, Producto = producto,
-            Comentario = comentario, Leida = false, FechaCreacion = fecha
-        }));
+            Comentario = comentario, Leida = false, FechaCreacion = DateTime.Now
+        });
     }
 }

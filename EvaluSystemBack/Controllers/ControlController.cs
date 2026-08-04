@@ -252,7 +252,7 @@ public class ControlController : ControllerBase
             cancellationToken,
             detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
         var producto = detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}";
-        await _notificacionService.CrearParaTodosAsync("RE", "Pedido rechazado en Control", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
+        await _notificacionService.CrearParaUsuarioAsync(detalle.Cabecera.VendedorId, "RE", "Pedido rechazado en Control", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         var updated = await Query().FirstAsync(x => x.Id == detalle.CabId, cancellationToken);

@@ -282,7 +282,7 @@ public class ImpresionesController : ControllerBase
             cancellationToken,
             detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
         var producto = detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}";
-        await _notificacionService.CrearParaTodosAsync("DV", "Pedido devuelto desde Impresión", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
+        await _notificacionService.CrearParaUsuarioAsync(detalle.Cabecera.VendedorId, "DV", "Pedido devuelto desde Impresión", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return Ok(new ImpresionDevolverDto(
