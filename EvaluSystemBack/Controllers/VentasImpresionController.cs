@@ -124,7 +124,10 @@ public class VentasImpresionController : ControllerBase
     {
         var canViewAll = await CurrentUserCanViewAllOrdersAsync();
         var currentUserId = CurrentUserId();
-        var canViewUserSales = canViewAll || (currentUserId.HasValue && await UserHasProfileAsync(currentUserId.Value, "Ventas"));
+        var allowedSellerIds = await CurrentUserSellerIdsAsync();
+        var canViewUserSales = canViewAll || (currentUserId.HasValue &&
+            (await UserHasProfileAsync(currentUserId.Value, "Ventas") ||
+             await UserHasProfileAsync(currentUserId.Value, "Team Leader")));
 
         var clientes = await _context.Clientes
             .Include(x => x.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
@@ -139,7 +142,7 @@ public class VentasImpresionController : ControllerBase
             .ToListAsync();
         var vendedores = canViewAll
             ? usuarios
-            : usuarios.Where(x => currentUserId.HasValue && x.Id == currentUserId.Value).ToList();
+            : usuarios.Where(x => allowedSellerIds.Contains(x.Id)).ToList();
         var estadosPago = await _context.EstadosPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
         var estadosVenta = await _context.EstadosVenta
             .AsNoTracking()
@@ -249,7 +252,10 @@ public class VentasImpresionController : ControllerBase
         }
 
         var canViewAll = await CurrentUserCanViewAllOrdersAsync();
-        if (!canViewAll && !await UserHasProfileAsync(currentUserId.Value, "Ventas"))
+        var allowedSellerIds = await CurrentUserSellerIdsAsync();
+        if (!canViewAll &&
+            !await UserHasProfileAsync(currentUserId.Value, "Ventas") &&
+            !await UserHasProfileAsync(currentUserId.Value, "Team Leader"))
         {
             var today = DateTime.Today;
             return Ok(new VentaUsuarioResumenDto(
@@ -277,7 +283,11 @@ public class VentasImpresionController : ControllerBase
         }
         else
         {
-            query = query.Where(x => x.VendedorId == currentUserId.Value);
+            query = query.Where(x => allowedSellerIds.Contains(x.VendedorId));
+            if (vendedorId.HasValue)
+            {
+                query = query.Where(x => x.VendedorId == vendedorId.Value);
+            }
         }
 
         if (clienteId.HasValue)
@@ -354,13 +364,9 @@ public class VentasImpresionController : ControllerBase
             return NotFound();
         }
 
-        if (!await CurrentUserCanViewAllOrdersAsync())
+        if (!await CurrentUserCanAccessSellerAsync(item.VendedorId))
         {
-            var currentUserId = CurrentUserId();
-            if (!currentUserId.HasValue || item.VendedorId != currentUserId.Value)
-            {
-                return Forbid();
-            }
+            return Forbid();
         }
 
         return Ok(item.ToDto());
@@ -378,13 +384,9 @@ public class VentasImpresionController : ControllerBase
             return NotFound();
         }
 
-        if (!await CurrentUserCanViewAllOrdersAsync())
+        if (!await CurrentUserCanAccessSellerAsync(pedido.VendedorId))
         {
-            var currentUserId = CurrentUserId();
-            if (!currentUserId.HasValue || pedido.VendedorId != currentUserId.Value)
-            {
-                return Forbid();
-            }
+            return Forbid();
         }
 
         return Ok(_pedidoFlujoService.Obtener(pedido).OrderByDescending(x => x.FechaHora));
@@ -728,6 +730,7 @@ public class VentasImpresionController : ControllerBase
         var query = Query().AsNoTracking();
         var canViewAll = await CurrentUserCanViewAllOrdersAsync();
         var currentUserId = CurrentUserId();
+        var allowedSellerIds = await CurrentUserSellerIdsAsync();
 
         if (!canViewAll)
         {
@@ -736,7 +739,11 @@ public class VentasImpresionController : ControllerBase
                 return new FilteredVentasQuery(query, true);
             }
 
-            query = query.Where(x => x.VendedorId == currentUserId.Value);
+            query = query.Where(x => allowedSellerIds.Contains(x.VendedorId));
+            if (vendedorId.HasValue)
+            {
+                query = query.Where(x => x.VendedorId == vendedorId.Value);
+            }
         }
         else if (vendedorId.HasValue)
         {
@@ -795,9 +802,38 @@ public class VentasImpresionController : ControllerBase
             return false;
         }
 
-        return await _permisoService.UsuarioTienePermisoAsync(userId.Value, "Administracion", "ver");
+        return await UserHasProfileAsync(userId.Value, "Administrador");
     }
 
+    private async Task<List<int>> CurrentUserSellerIdsAsync()
+    {
+        var userId = CurrentUserId();
+        if (!userId.HasValue)
+        {
+            return [];
+        }
+
+        var sellerIds = new HashSet<int> { userId.Value };
+        if (await UserHasProfileAsync(userId.Value, "Team Leader"))
+        {
+            var teamSellerIds = await _context.GrupoVentaVendedores
+                .AsNoTracking()
+                .Where(x => x.Estado && x.GrupoVenta.Estado &&
+                    x.GrupoVenta.TeamLeaderUsuarioId == userId.Value)
+                .Select(x => x.VendedorUsuarioId)
+                .Distinct()
+                .ToListAsync();
+            sellerIds.UnionWith(teamSellerIds);
+        }
+
+        return sellerIds.ToList();
+    }
+
+    private async Task<bool> CurrentUserCanAccessSellerAsync(int vendedorId)
+    {
+        return await CurrentUserCanViewAllOrdersAsync() ||
+            (await CurrentUserSellerIdsAsync()).Contains(vendedorId);
+    }
     private async Task<bool> UserHasProfileAsync(int usuarioId, string profileName)
     {
         var hasProfile = await _context.UsuarioPerfiles
@@ -872,7 +908,7 @@ public class VentasImpresionController : ControllerBase
 
     private async Task<ActionResult?> ValidateSellerForCurrentUserAsync(int vendedorId)
     {
-        if (await CurrentUserCanViewAllOrdersAsync())
+        if (await CurrentUserCanAccessSellerAsync(vendedorId))
         {
             return null;
         }
@@ -883,28 +919,26 @@ public class VentasImpresionController : ControllerBase
             return Unauthorized();
         }
 
-        return vendedorId == userId.Value
-            ? null
-            : Forbid();
+        return Forbid();
     }
 
     private async Task<VentaImpresionCompletaRequest> NormalizeSellerAsync(VentaImpresionCompletaRequest request)
     {
-        return await CurrentUserCanViewAllOrdersAsync() || !CurrentUserId().HasValue
+        return await CurrentUserCanAccessSellerAsync(request.VendedorId) || !CurrentUserId().HasValue
             ? request
             : request with { VendedorId = CurrentUserId()!.Value };
     }
 
     private async Task<VentaImpresionCompletaUpdateRequest> NormalizeSellerAsync(VentaImpresionCompletaUpdateRequest request)
     {
-        return await CurrentUserCanViewAllOrdersAsync() || !CurrentUserId().HasValue
+        return await CurrentUserCanAccessSellerAsync(request.VendedorId) || !CurrentUserId().HasValue
             ? request
             : request with { VendedorId = CurrentUserId()!.Value };
     }
 
     private async Task<VentaImpresionCabRequest> NormalizeSellerAsync(VentaImpresionCabRequest request)
     {
-        return await CurrentUserCanViewAllOrdersAsync() || !CurrentUserId().HasValue
+        return await CurrentUserCanAccessSellerAsync(request.VendedorId) || !CurrentUserId().HasValue
             ? request
             : request with { VendedorId = CurrentUserId()!.Value };
     }
