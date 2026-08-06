@@ -22,6 +22,8 @@ public class DeliveryController : ControllerBase
     private const string EstadoRutaCerrado = "Cerrado";
     private const string EstadoDetalleAprobado = "AP";
     private const string EstadoVentaEnviado = "EE";
+    private const string EstadoCabeceraEntregado = "ET";
+    private const string EstadoDetalleEntregado = "ET";
     private readonly EvaluSystemDbContext _context;
     private readonly IEstadoVentaFlujoService _estadoVentaFlujoService;
     private readonly IPedidoFlujoService _pedidoFlujoService;
@@ -39,15 +41,21 @@ public class DeliveryController : ControllerBase
         var pedidos = await Query()
             .Where(x => x.UsuarioEntregaPedidoId == null)
             .Where(x => x.MetodoEntrega == MetodoEntregaDelivery)
-            .Where(x => x.EstadoVentaId == "PE")
-            .OrderBy(x => x.FechaEntrega ?? x.FechaCreacion)
-            .ThenBy(x => x.Id)
-            .Take(100)
-            .ToListAsync(cancellationToken);
+            .Where(x => x.EstadoVentaId == "AC")
+            .OrderBy(x => x.FechaEntrega ?? x.FechaCreacion).ThenBy(x => x.Id)
+            .Take(200).ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(pedido => ToDto(pedido)));
+        var result = new List<DeliveryPedidoDto>();
+        foreach (var grupo in pedidos.GroupBy(x => x.ClienteId))
+        {
+            var grupoListo = grupo.All(p => p.Detalles.Count > 0 && p.Detalles.All(d => d.EstadoItem.Trim() == "PE"));
+            var faltantes = grupo.Where(p => p.Detalles.Any(d => d.EstadoItem.Trim() != "PE")).Select(p => $"#{p.Id}").ToList();
+            var mensaje = grupoListo ? null : $"Falta otro pedido para su entrega: {string.Join(", ", faltantes)}";
+            result.AddRange(grupo.Select(p => ToDto(p, grupoEntregaListo: grupoListo,
+                mensajeBloqueoEntrega: mensaje, cantidadPedidosGrupo: grupo.Count())));
+        }
+        return Ok(result);
     }
-
     [HttpGet("transportadora")]
     public async Task<ActionResult<IEnumerable<DeliveryPedidoDto>>> GetTransportadora(CancellationToken cancellationToken)
     {
@@ -113,6 +121,7 @@ public class DeliveryController : ControllerBase
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.Ciudad)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Departamento)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.EstadoVenta)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.UsuarioEntregaPedido)!.ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.Producto)
@@ -395,42 +404,46 @@ public class DeliveryController : ControllerBase
     public async Task<ActionResult<DeliveryPedidoDto>> TomarPedido(int id, CancellationToken cancellationToken)
     {
         var userId = CurrentUserId();
-        if (!userId.HasValue)
+        if (!userId.HasValue) return Unauthorized(new { message = "No se pudo identificar el usuario logueado." });
+        var pedido = await QueryForUpdate().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (pedido is null) return NotFound(new { message = "No se encontro el pedido." });
+        if (!CanTakeForRoute(pedido.MetodoEntrega)) return BadRequest(new { message = "Este pedido no se puede tomar para ruta." });
+
+        List<VentaImpresionCab> grupo;
+        if (string.Equals(pedido.MetodoEntrega, MetodoEntregaDelivery, StringComparison.OrdinalIgnoreCase))
         {
-            return Unauthorized(new { message = "No se pudo identificar el usuario logueado." });
+            grupo = await QueryForUpdate()
+                .Where(x => x.ClienteId == pedido.ClienteId && x.EstadoVentaId == "AC" &&
+                    x.MetodoEntrega == MetodoEntregaDelivery && x.UsuarioEntregaPedidoId == null)
+                .ToListAsync(cancellationToken);
+        }
+        else
+        {
+            grupo = [pedido];
         }
 
-        var pedido = await QueryForUpdate()
-            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-
-        if (pedido is null)
+        if (grupo.Count == 0 || grupo.Any(p => p.UsuarioEntregaPedidoId != null || p.EstadoVentaId != "AC" ||
+            p.Detalles.Count == 0 || p.Detalles.Any(d => d.EstadoItem.Trim() != "PE")))
         {
-            return NotFound(new { message = "No se encontro el pedido." });
+            return BadRequest(new { message = string.Equals(pedido.MetodoEntrega, MetodoEntregaDelivery, StringComparison.OrdinalIgnoreCase)
+                ? "Falta otro pedido para su entrega."
+                : "El pedido de transportadora ya no esta disponible para tomar." });
         }
 
-        if (pedido.EstadoVentaId != "PE")
+        var now = DateTime.Now;
+        foreach (var item in grupo)
         {
-            return BadRequest(new { message = "El pedido no esta listo para envio." });
+            item.UsuarioEntregaPedidoId = userId.Value;
+            item.FechaTomaDelivery = now;
+            item.UsuModificacion = userId.Value;
+            item.FechaModificacion = now;
+            await _pedidoFlujoService.RegistrarAsync(item, "Pedido tomado para envio", "PE", "PE",
+                usuarioId: userId.Value, cancellationToken: cancellationToken);
         }
-
-        if (!CanTakeForRoute(pedido.MetodoEntrega))
-        {
-            return BadRequest(new { message = "Este pedido no se puede tomar para ruta." });
-        }
-
-        if (pedido.UsuarioEntregaPedidoId.HasValue && pedido.UsuarioEntregaPedidoId.Value != userId.Value)
-        {
-            return BadRequest(new { message = "Este pedido ya fue tomado por otro delivery." });
-        }
-
-        pedido.UsuarioEntregaPedidoId = userId.Value;
-        pedido.FechaTomaDelivery = DateTime.Now;
-        await MarkAsSentAsync(pedido, userId.Value, "Pedido tomado por delivery", cancellationToken);
-
+        await _context.SaveChangesAsync(cancellationToken);
         var updated = await Query().FirstAsync(x => x.Id == id, cancellationToken);
-        return Ok(ToDto(updated));
+        return Ok(ToDto(updated, grupoEntregaListo: true, cantidadPedidosGrupo: grupo.Count));
     }
-
     [HttpPost("{id:int}/quitar")]
     public async Task<IActionResult> QuitarPedidoTomado(int id, CancellationToken cancellationToken)
     {
@@ -461,21 +474,18 @@ public class DeliveryController : ControllerBase
             return BadRequest(new { message = "No se puede quitar un pedido que ya pertenece a un lote." });
         }
 
-        var estadoPendienteEnvio = await _estadoVentaFlujoService.ObtenerPorIdAsync("PE", cancellationToken);
-
-        if (estadoPendienteEnvio is null)
-        {
-            return BadRequest(new { message = "No existe un estado pendiente de envio configurado." });
-        }
-
         var estadoAnteriorId = pedido.EstadoVentaId;
-        pedido.EstadoVentaId = estadoPendienteEnvio.Id;
         pedido.UsuarioEntregaPedidoId = null;
         pedido.FechaTomaDelivery = null;
+        pedido.EstadoVentaId = "AC";
+        foreach (var detalle in pedido.Detalles)
+        {
+            detalle.EstadoItem = "PE";
+        }
         pedido.UsuModificacion = userId.Value;
         pedido.FechaModificacion = DateTime.Now;
         await _pedidoFlujoService.RegistrarAsync(
-            pedido, "Pedido liberado por delivery", estadoAnteriorId, pedido.EstadoVentaId,
+            pedido, "Pedido liberado y devuelto a pendientes", estadoAnteriorId, pedido.EstadoVentaId,
             usuarioId: userId.Value, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -520,7 +530,10 @@ public class DeliveryController : ControllerBase
         }
 
         var estadoAnteriorId = pedido.EstadoVentaId;
-        pedido.EstadoVentaId = estadoEnviado.Id;
+        foreach (var detalle in pedido.Detalles) detalle.EstadoItem = EstadoDetalleEntregado;
+        pedido.EstadoVentaId = pedido.Detalles.All(d => d.EstadoItem.Trim() == EstadoDetalleEntregado)
+            ? EstadoCabeceraEntregado
+            : "AC";
         pedido.UsuarioEntregaPedidoId = userId;
         pedido.UsuModificacion = userId;
         pedido.FechaModificacion = DateTime.Now;
@@ -628,7 +641,8 @@ public class DeliveryController : ControllerBase
     private IQueryable<VentaImpresionCab> QueryForUpdate()
     {
         return _context.VentasImpresionCab
-            .Include(x => x.EstadoVenta);
+            .Include(x => x.EstadoVenta)
+            .Include(x => x.Detalles);
     }
 
     private IQueryable<RutaDelivery> QueryRutaById(int id)
@@ -640,6 +654,7 @@ public class DeliveryController : ControllerBase
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.Ciudad)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Departamento)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.EstadoVenta)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.UsuarioEntregaPedido)!.ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.Producto)
@@ -661,7 +676,7 @@ public class DeliveryController : ControllerBase
         return await Query()
             .Where(x => x.MetodoEntrega == method)
             .Where(x => !CanTakeForRoute(method) || x.UsuarioEntregaPedidoId == null)
-            .Where(x => x.EstadoVentaId == "PE")
+            .Where(x => x.EstadoVentaId == "AC" && x.Detalles.Count > 0 && x.Detalles.All(d => d.EstadoItem == "PE"))
             .OrderBy(x => x.FechaEntrega ?? x.FechaCreacion)
             .ThenBy(x => x.Id)
             .Take(200)
@@ -713,7 +728,7 @@ public class DeliveryController : ControllerBase
             })
             .ToDictionaryAsync(x => x.Id, x => x.Nombre, cancellationToken);
     }
-    private static DeliveryPedidoDto ToDto(VentaImpresionCab pedido, IReadOnlyDictionary<int, string>? vendedores = null)
+    private static DeliveryPedidoDto ToDto(VentaImpresionCab pedido, IReadOnlyDictionary<int, string>? vendedores = null, bool grupoEntregaListo = true, string? mensajeBloqueoEntrega = null, int cantidadPedidosGrupo = 1)
     {
         return new DeliveryPedidoDto(
             pedido.Id,
@@ -733,7 +748,11 @@ public class DeliveryController : ControllerBase
             pedido.UsuarioEntregaPedidoId,
             pedido.UsuarioEntregaPedido is null ? null : NombreUsuario(pedido.UsuarioEntregaPedido),
             pedido.FechaTomaDelivery,
-            Productos(pedido));
+            Productos(pedido),
+            pedido.Cliente?.DatosEnvio?.Transportadora?.Nombre,
+            grupoEntregaListo,
+            mensajeBloqueoEntrega,
+            cantidadPedidosGrupo);
     }
 
     private static DeliveryRutaDto ToRutaDto(RutaDelivery ruta)
@@ -915,8 +934,8 @@ public class DeliveryController : ControllerBase
 
     private static class DeliveryRoutePdfBuilder
     {
-        private const double PageWidth = 595;
-        private const double PageHeight = 842;
+        private const double PageWidth = 842;
+        private const double PageHeight = 595;
         private const double MarginX = 46;
         private const double TealR = 0.18;
         private const double TealG = 0.54;
@@ -931,7 +950,7 @@ public class DeliveryController : ControllerBase
         {
             var pages = new List<string>();
             var builder = NewPage(deliveryName, dateRange);
-            var y = 710d;
+            var y = 470d;
 
             if (pedidos.Count == 0)
             {
@@ -952,41 +971,42 @@ public class DeliveryController : ControllerBase
                 .ThenBy(x => x.Id)
                 .ToList();
 
-            if (transportadoraPedidos.Count > 0)
+            foreach (var transportadoraGroup in transportadoraPedidos
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.Transportadora) ? "Sin transportadora" : x.Transportadora!)
+                .OrderBy(x => x.Key))
             {
                 if (y < 155)
                 {
                     pages.Add(builder.ToString());
                     builder = NewPage(deliveryName, dateRange);
-                    y = 710;
+                    y = 470;
                 }
 
-                Text(builder, MarginX, y, "TRANSPORTADORA", 11, bold: true, color: (TealR, TealG, TealB));
-                Text(builder, MarginX + 145, y, $"{transportadoraPedidos.Count} envios", 9);
+                Text(builder, MarginX, y, $"TRANSPORTADORA: {transportadoraGroup.Key.ToUpperInvariant()}", 11, bold: true, color: (TealR, TealG, TealB));
+                Text(builder, MarginX + 330, y, $"{transportadoraGroup.Count()} envios", 9);
                 y -= 14;
-                DrawTableHeader(builder, y);
+                DrawTableHeader(builder, y, includeTransportadora: true);
                 y -= 15;
 
-                foreach (var pedido in transportadoraPedidos)
+                foreach (var pedido in transportadoraGroup.OrderBy(x => x.Id))
                 {
                     if (y < 55)
                     {
                         pages.Add(builder.ToString());
                         builder = NewPage(deliveryName, dateRange);
-                        y = 710;
-                        Text(builder, MarginX, y, "TRANSPORTADORA (CONT.)", 11, bold: true, color: (TealR, TealG, TealB));
+                        y = 470;
+                        Text(builder, MarginX, y, $"TRANSPORTADORA: {transportadoraGroup.Key.ToUpperInvariant()} (CONT.)", 11, bold: true, color: (TealR, TealG, TealB));
                         y -= 14;
-                        DrawTableHeader(builder, y);
+                        DrawTableHeader(builder, y, includeTransportadora: true);
                         y -= 15;
                     }
 
-                    DrawTableRow(builder, y, pedido);
+                    DrawTableRow(builder, y, pedido, includeTransportadora: true);
                     y -= 15;
                 }
 
-                y -= 10;
+                y -= 18;
             }
-
             foreach (var cityGroup in deliveryPedidos
                 .GroupBy(x => string.IsNullOrWhiteSpace(x.Ciudad) ? "Sin ciudad" : x.Ciudad)
                 .OrderBy(x => x.Key))
@@ -995,7 +1015,7 @@ public class DeliveryController : ControllerBase
                 {
                     pages.Add(builder.ToString());
                     builder = NewPage(deliveryName, dateRange);
-                    y = 710;
+                    y = 470;
                 }
 
                 Text(builder, MarginX, y, $"CIUDAD: {cityGroup.Key.ToUpperInvariant()}", 11, bold: true, color: (0.05, 0.23, 0.39));
@@ -1010,7 +1030,7 @@ public class DeliveryController : ControllerBase
                     {
                         pages.Add(builder.ToString());
                         builder = NewPage(deliveryName, dateRange);
-                        y = 710;
+                        y = 470;
                         Text(builder, MarginX, y, $"CIUDAD: {cityGroup.Key.ToUpperInvariant()} (CONT.)", 11, bold: true, color: (0.05, 0.23, 0.39));
                         y -= 14;
                         DrawTableHeader(builder, y);
@@ -1037,36 +1057,63 @@ public class DeliveryController : ControllerBase
         private static StringBuilder NewPage(string deliveryName, string dateRange)
         {
             var builder = new StringBuilder();
-            Text(builder, 0, 790, "RUTA DE DELIVERY", 18, bold: true, centered: true, color: (TealR, TealG, TealB));
-            Text(builder, MarginX, 745, deliveryName.ToUpperInvariant(), 13, bold: true);
-            Text(builder, PageWidth - MarginX - 150, 745, $"Rango: {dateRange}", 11, bold: true);
+            Text(builder, 0, 545, "RUTA DE DELIVERY", 18, bold: true, centered: true, color: (TealR, TealG, TealB));
+            Text(builder, MarginX, 505, deliveryName.ToUpperInvariant(), 13, bold: true);
+            Text(builder, PageWidth - MarginX - 290, 505, $"Rango: {dateRange}", 11, bold: true);
             return builder;
         }
 
-        private static void DrawTableHeader(StringBuilder builder, double y)
+        private static void DrawTableHeader(StringBuilder builder, double y, bool includeTransportadora = false)
         {
-            FillRect(builder, MarginX, y, 505, 14, TealR, TealG, TealB);
+            FillRect(builder, MarginX, y, 750, 14, TealR, TealG, TealB);
+            if (includeTransportadora)
+            {
+                Text(builder, MarginX + 8, y + 4, "Nro. Pedido", 7, bold: true, color: (1, 1, 1));
+                Text(builder, MarginX + 68, y + 4, "Nombre", 7, bold: true, color: (1, 1, 1));
+                Text(builder, MarginX + 218, y + 4, "Vendedor", 7, bold: true, color: (1, 1, 1));
+                Text(builder, MarginX + 358, y + 4, "Telefono", 7, bold: true, color: (1, 1, 1));
+                Text(builder, MarginX + 448, y + 4, "Transportadora", 7, bold: true, color: (1, 1, 1));
+                Text(builder, MarginX + 588, y + 4, "Producto", 7, bold: true, color: (1, 1, 1));
+                return;
+            }
+
             Text(builder, MarginX + 8, y + 4, "Nro. Pedido", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 68, y + 4, "Nombre", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 193, y + 4, "Vendedor", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 303, y + 4, "Telefono", 7, bold: true, color: (1, 1, 1));
-            Text(builder, MarginX + 368, y + 4, "Producto", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 78, y + 4, "Nombre", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 258, y + 4, "Vendedor", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 418, y + 4, "Telefono", 7, bold: true, color: (1, 1, 1));
+            Text(builder, MarginX + 518, y + 4, "Producto", 7, bold: true, color: (1, 1, 1));
         }
 
-        private static void DrawTableRow(StringBuilder builder, double y, DeliveryPedidoDto pedido)
+        private static void DrawTableRow(StringBuilder builder, double y, DeliveryPedidoDto pedido, bool includeTransportadora = false)
         {
-            StrokeRect(builder, MarginX, y, 60, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 60, y, 125, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 185, y, 110, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 295, y, 65, 15, 0.78, 0.86, 0.92);
-            StrokeRect(builder, MarginX + 360, y, 145, 15, 0.78, 0.86, 0.92);
-            Text(builder, MarginX + 8, y + 4, pedido.Id.ToString(CultureInfo.InvariantCulture), 7);
-            Text(builder, MarginX + 68, y + 4, Truncate(pedido.Cliente, 18), 7);
-            Text(builder, MarginX + 193, y + 4, Truncate(pedido.Vendedor, 20), 7);
-            Text(builder, MarginX + 303, y + 4, Truncate(pedido.Telefono ?? "S/D", 11), 7);
-            Text(builder, MarginX + 368, y + 4, Truncate(pedido.Productos, 24), 7);
-        }
+            if (includeTransportadora)
+            {
+                StrokeRect(builder, MarginX, y, 60, 15, 0.78, 0.86, 0.92);
+                StrokeRect(builder, MarginX + 60, y, 150, 15, 0.78, 0.86, 0.92);
+                StrokeRect(builder, MarginX + 210, y, 140, 15, 0.78, 0.86, 0.92);
+                StrokeRect(builder, MarginX + 350, y, 90, 15, 0.78, 0.86, 0.92);
+                StrokeRect(builder, MarginX + 440, y, 140, 15, 0.78, 0.86, 0.92);
+                StrokeRect(builder, MarginX + 580, y, 170, 15, 0.78, 0.86, 0.92);
+                Text(builder, MarginX + 8, y + 4, pedido.Id.ToString(CultureInfo.InvariantCulture), 7);
+                Text(builder, MarginX + 68, y + 4, pedido.Cliente, 7);
+                Text(builder, MarginX + 218, y + 4, pedido.Vendedor, 7);
+                Text(builder, MarginX + 358, y + 4, pedido.Telefono ?? "S/D", 7);
+                Text(builder, MarginX + 448, y + 4, pedido.Transportadora ?? "S/D", 7);
+                Text(builder, MarginX + 588, y + 4, pedido.Productos, 6);
+                return;
+            }
 
+            StrokeRect(builder, MarginX, y, 70, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 70, y, 180, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 250, y, 160, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 410, y, 100, 15, 0.78, 0.86, 0.92);
+            StrokeRect(builder, MarginX + 510, y, 240, 15, 0.78, 0.86, 0.92);
+            Text(builder, MarginX + 8, y + 4, pedido.Id.ToString(CultureInfo.InvariantCulture), 7);
+            Text(builder, MarginX + 78, y + 4, pedido.Cliente, 7);
+            Text(builder, MarginX + 258, y + 4, pedido.Vendedor, 7);
+            Text(builder, MarginX + 418, y + 4, pedido.Telefono ?? "S/D", 7);
+            Text(builder, MarginX + 518, y + 4, pedido.Productos, 6);
+        }
         private static byte[] WritePdf(IReadOnlyList<string> pageContents)
         {
             var objects = new List<string>();

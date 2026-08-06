@@ -339,7 +339,11 @@ public record DeliveryPedidoDto(
     int? DeliveryUsuarioId,
     string? DeliveryUsuario,
     DateTime? FechaTomaDelivery,
-    string Productos);
+    string Productos,
+    string? Transportadora = null,
+    bool GrupoEntregaListo = true,
+    string? MensajeBloqueoEntrega = null,
+    int CantidadPedidosGrupo = 1);
 
 public record DeliveryResumenDto(
     int UsuarioId,

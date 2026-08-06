@@ -54,7 +54,7 @@ public class ImpresionesController : ControllerBase
             .Include(x => x.Producto)
             .Include(x => x.TipoMaquina)
             .AsNoTracking()
-            .Where(x => x.Cabecera != null && x.Cabecera.EstadoVentaId == EstadoVentaImpresion)
+            .Where(x => x.Cabecera != null && x.Cabecera.EstadoVentaId != "XX" && x.EstadoItem == EstadoVentaImpresion)
             .Where(x => x.CheckImpresion != true)
             .Where(x => !string.IsNullOrWhiteSpace(x.ArchivoDisenio) || !string.IsNullOrWhiteSpace(x.ArchivoDisenioNombre));
 
@@ -99,7 +99,7 @@ public class ImpresionesController : ControllerBase
                 x.Producto != null ? x.Producto.Nombre : "Sin producto",
                 x.Cantidad,
                 x.ArchivoDisenioNombre,
-                x.Cabecera.EstadoVenta != null ? x.Cabecera.EstadoVenta.Nombre ?? x.Cabecera.EstadoVentaId : x.Cabecera.EstadoVentaId,
+                x.EstadoItem,
                 x.CheckImpresion == true))
             .ToListAsync(cancellationToken);
 
@@ -157,142 +157,52 @@ public class ImpresionesController : ControllerBase
     [HttpPut("{detalleId:int}/marcar-impreso")]
     public async Task<ActionResult<ImpresionMarcarDto>> MarcarImpreso(int detalleId, CancellationToken cancellationToken)
     {
-        if (!await TienePermisoAsync("editar"))
-        {
-            return Forbid();
-        }
-
-        var detalle = await _context.VentasImpresionDet
-            .Include(x => x.Cabecera)
-            .ThenInclude(x => x!.EstadoVenta)
+        if (!await TienePermisoAsync("editar")) return Forbid();
+        var detalle = await _context.VentasImpresionDet.Include(x => x.Cabecera)
             .FirstOrDefaultAsync(x => x.Id == detalleId, cancellationToken);
+        if (detalle?.Cabecera is null) return NotFound(new { message = "No se encontro el detalle de impresion." });
+        if (!string.Equals(detalle.EstadoItem.Trim(), EstadoVentaImpresion, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "El detalle no esta en impresion." });
 
-        if (detalle is null || detalle.Cabecera is null)
-        {
-            return NotFound(new { message = "No se encontro el detalle de impresion." });
-        }
-
-        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
+        var estadoAnteriorId = detalle.EstadoItem.Trim();
         detalle.CheckImpresion = true;
-
-        var detallesPedido = await _context.VentasImpresionDet
-            .Where(x => x.CabId == detalle.CabId)
-            .ToListAsync(cancellationToken);
-        var pedidoCompleto = detallesPedido.All(x => x.Id == detalle.Id || x.CheckImpresion == true);
-
-        if (pedidoCompleto)
-        {
-            var siguienteEstado = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaControl, cancellationToken);
-
-            if (siguienteEstado is not null)
-            {
-                detalle.Cabecera.EstadoVentaId = siguienteEstado.Id;
-            }
-        }
-
-        await _pedidoFlujoService.RegistrarAsync(
-            detalle.Cabecera,
-            pedidoCompleto ? "Impresión completada" : "Detalle marcado como impreso",
-            estadoAnteriorId,
-            detalle.Cabecera.EstadoVentaId,
-            detalleId: detalle.Id,
-            cancellationToken: cancellationToken);
+        detalle.EstadoItem = EstadoVentaControl;
+        detalle.FechaModificacion = DateTime.Now;
+        await _pedidoFlujoService.RegistrarAsync(detalle.Cabecera, "Detalle marcado como impreso",
+            estadoAnteriorId, detalle.EstadoItem, detalleId: detalle.Id, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-
-        var estadoVenta = await _context.EstadosVenta
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == detalle.Cabecera.EstadoVentaId, cancellationToken);
-
-        return Ok(new ImpresionMarcarDto(
-            detalle.Id,
-            detalle.CabId,
-            true,
-            pedidoCompleto,
-            detalle.Cabecera.EstadoVentaId,
-            estadoVenta?.Nombre ?? detalle.Cabecera.EstadoVentaId));
+        return Ok(new ImpresionMarcarDto(detalle.Id, detalle.CabId, true, true,
+            detalle.EstadoItem, "Control"));
     }
-
     [HttpPut("{detalleId:int}/devolver-carga")]
-    public async Task<ActionResult<ImpresionDevolverDto>> DevolverACarga(
-        int detalleId,
-        [FromBody] ImpresionDevolverRequest request,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<ImpresionDevolverDto>> DevolverACarga(int detalleId, [FromBody] ImpresionDevolverRequest request, CancellationToken cancellationToken)
     {
-        if (!await TienePermisoAsync("editar"))
-        {
-            return Forbid();
-        }
-
+        if (!await TienePermisoAsync("editar")) return Forbid();
         var observacion = request.Observacion?.Trim();
-        if (string.IsNullOrWhiteSpace(observacion))
-        {
-            return BadRequest(new { message = "Debe agregar un comentario para devolver el pedido a carga." });
-        }
-
-        var detalle = await _context.VentasImpresionDet
-            .Include(x => x.Producto)
-            .Include(x => x.Cabecera)
-            .ThenInclude(x => x!.EstadoVenta)
+        if (string.IsNullOrWhiteSpace(observacion)) return BadRequest(new { message = "Debe agregar un comentario para devolver el detalle a carga." });
+        var detalle = await _context.VentasImpresionDet.Include(x => x.Producto).Include(x => x.Cabecera)
             .FirstOrDefaultAsync(x => x.Id == detalleId, cancellationToken);
+        if (detalle?.Cabecera is null) return NotFound(new { message = "No se encontro el detalle de impresion." });
+        if (!string.Equals(detalle.EstadoItem.Trim(), EstadoVentaImpresion, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { message = "Solo se pueden devolver detalles que estan en impresion." });
+        if (detalle.CheckImpresion == true) return BadRequest(new { message = "El detalle ya fue impreso." });
 
-        if (detalle is null || detalle.Cabecera is null)
-        {
-            return NotFound(new { message = "No se encontro el detalle de impresion." });
-        }
-
-        if (!string.Equals(detalle.Cabecera.EstadoVentaId, EstadoVentaImpresion, StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(new { message = "Solo se pueden devolver pedidos que estan en impresion." });
-        }
-
-        if (detalle.CheckImpresion == true)
-        {
-            return BadRequest(new { message = "El detalle ya fue impreso y no se puede devolver ni modificar." });
-        }
-
-        var estadoCarga = await _estadoVentaFlujoService.ObtenerPorIdAsync(EstadoVentaCarga, cancellationToken);
-        if (estadoCarga is null)
-        {
-            return BadRequest(new { message = "No existe el estado de carga configurado." });
-        }
-
+        var estadoAnteriorId = detalle.EstadoItem.Trim();
         var userId = CurrentUserId();
-        var now = DateTime.Now;
-
         detalle.Observacion = observacion;
-        detalle.EstadoItem = EstadoDetalleDevuelto;
+        detalle.EstadoItem = EstadoVentaCarga;
         detalle.CheckImpresion = false;
-        detalle.FechaModificacion = now;
+        detalle.FechaModificacion = DateTime.Now;
         detalle.UsuModificacion = userId ?? detalle.UsuModificacion;
-
-        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
-        detalle.Cabecera.EstadoVentaId = estadoCarga.Id;
-        detalle.Cabecera.Observacion = observacion;
-        detalle.Cabecera.FechaModificacion = now;
-        detalle.Cabecera.UsuModificacion = userId ?? detalle.Cabecera.UsuModificacion;
-
-        await _pedidoFlujoService.RegistrarAsync(
-            detalle.Cabecera,
-            "Rechazado en impresión y devuelto a carga",
-            estadoAnteriorId,
-            detalle.Cabecera.EstadoVentaId,
-            observacion,
-            detalle.Id,
-            userId,
-            cancellationToken,
+        await _pedidoFlujoService.RegistrarAsync(detalle.Cabecera, "Rechazado en impresion y devuelto a carga",
+            estadoAnteriorId, detalle.EstadoItem, observacion, detalle.Id, userId, cancellationToken,
             detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}");
         var producto = detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}";
-        await _notificacionService.CrearParaUsuarioAsync(detalle.Cabecera.VendedorId, "DV", "Pedido devuelto desde Impresión", $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
+        await _notificacionService.CrearParaUsuarioAsync(detalle.Cabecera.VendedorId, "DV", "Detalle devuelto desde Impresion",
+            $"Pedido #{detalle.CabId} - {producto}", detalle.CabId, detalle.Id, producto, observacion, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-
-        return Ok(new ImpresionDevolverDto(
-            detalle.Id,
-            detalle.CabId,
-            estadoCarga.Id,
-            estadoCarga.Nombre ?? estadoCarga.Id,
-            observacion));
+        return Ok(new ImpresionDevolverDto(detalle.Id, detalle.CabId, detalle.EstadoItem, "Carga", observacion));
     }
-
     private async Task<string> GetBasePathAsync()
     {
         var basePath = await _configuracionService.ObtenerValorAsync("RUTA_DE_ARCHIVOS", 1)

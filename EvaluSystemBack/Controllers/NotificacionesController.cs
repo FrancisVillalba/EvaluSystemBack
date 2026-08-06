@@ -24,7 +24,9 @@ public class NotificacionesController : ControllerBase
         await _service.AsegurarTablaAsync(cancellationToken);
         var items = await _context.Notificaciones.AsNoTracking().Where(x => x.UsuarioId == usuarioId && _context.VentasImpresionCab.Any(p => p.Id == x.PedidoId && p.VendedorId == usuarioId))
             .OrderByDescending(x => x.FechaCreacion).Take(30)
-            .Select(x => new NotificacionDto(x.Id, x.Tipo, x.Titulo, x.Mensaje, x.PedidoId, x.DetalleId, x.Producto, x.Comentario, x.Leida, x.FechaCreacion, x.FechaLectura))
+            .Select(x => new NotificacionDto(x.Id, x.Tipo, x.Titulo, x.Mensaje, x.PedidoId, x.DetalleId, x.Producto,
+                _context.VentasImpresionCab.Where(p => p.Id == x.PedidoId).Select(p => p.Cliente!.Nombre).FirstOrDefault() ?? "Sin cliente",
+                x.Comentario, x.Leida, x.FechaCreacion, x.FechaLectura))
             .ToListAsync(cancellationToken);
         var noLeidas = await _context.Notificaciones.CountAsync(x => x.UsuarioId == usuarioId && !x.Leida && _context.VentasImpresionCab.Any(p => p.Id == x.PedidoId && p.VendedorId == usuarioId), cancellationToken);
         return Ok(new NotificacionesResumenDto(noLeidas, items));

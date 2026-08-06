@@ -55,8 +55,8 @@ public class ControlController : ControllerBase
         }
 
         var pedidos = await Query()
-            .Where(x => x.EstadoVentaId == estadoControl.Id)
-            .Where(x => x.Detalles.Any(d => d.EstadoItem != EstadoDetalleAprobado && d.EstadoItem != EstadoDetalleRechazado))
+            .Where(x => x.EstadoVentaId != "XX")
+            .Where(x => x.Detalles.Any(d => d.EstadoItem == estadoControl.Id))
             .OrderBy(x => x.Detalles.Min(d => d.TipoMaquina!.Nombre))
             .ThenBy(x => x.FechaEntrega ?? x.FechaCreacion)
             .ThenBy(x => x.Id)
@@ -104,7 +104,7 @@ public class ControlController : ControllerBase
             return NotFound(new { message = "No se encontro el archivo." });
         }
 
-        if (estadoControl is not null && detalle.Cabecera.EstadoVentaId != estadoControl.Id)
+        if (estadoControl is not null && !string.Equals(detalle.EstadoItem.Trim(), estadoControl.Id, StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest(new { message = "El archivo no esta en control." });
         }
@@ -156,7 +156,7 @@ public class ControlController : ControllerBase
         }
 
         var estadoControl = await _estadoVentaFlujoService.ObtenerPorIdAsync("CO", cancellationToken);
-        if (estadoControl is not null && detalle.Cabecera.EstadoVentaId != estadoControl.Id)
+        if (estadoControl is not null && !string.Equals(detalle.EstadoItem.Trim(), estadoControl.Id, StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest(new { message = "El pedido no esta en control." });
         }
@@ -166,23 +166,17 @@ public class ControlController : ControllerBase
             return BadRequest(new { message = "El detalle ya fue controlado." });
         }
 
-        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
+        var estadoAnteriorId = detalle.EstadoItem.Trim();
         var userId = CurrentUserId();
-        detalle.EstadoItem = EstadoDetalleAprobado;
+        detalle.EstadoItem = EstadoVentaPendienteEnvio;
         detalle.FechaModificacion = DateTime.Now;
         detalle.UsuModificacion = userId ?? detalle.UsuModificacion;
-
-        var updateError = await ActualizarCabeceraDespuesDeControlAsync(detalle.Cabecera, userId, cancellationToken);
-        if (updateError is not null)
-        {
-            return BadRequest(new { message = updateError });
-        }
 
         await _pedidoFlujoService.RegistrarAsync(
             detalle.Cabecera,
             "Detalle aprobado en control",
             estadoAnteriorId,
-            detalle.Cabecera.EstadoVentaId,
+            detalle.EstadoItem,
             detalleId: detalle.Id,
             usuarioId: userId,
             cancellationToken: cancellationToken);
@@ -215,7 +209,7 @@ public class ControlController : ControllerBase
         }
 
         var estadoControl = await _estadoVentaFlujoService.ObtenerPorIdAsync("CO", cancellationToken);
-        if (estadoControl is not null && detalle.Cabecera.EstadoVentaId != estadoControl.Id)
+        if (estadoControl is not null && !string.Equals(detalle.EstadoItem.Trim(), estadoControl.Id, StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest(new { message = "El pedido no esta en control." });
         }
@@ -225,7 +219,7 @@ public class ControlController : ControllerBase
             return BadRequest(new { message = "El detalle ya fue controlado." });
         }
 
-        var estadoAnteriorId = detalle.Cabecera.EstadoVentaId;
+        var estadoAnteriorId = detalle.EstadoItem.Trim();
         var userId = CurrentUserId();
         var observacion = request.Observacion.Trim();
         detalle.EstadoItem = EstadoDetalleRechazado;
@@ -235,17 +229,11 @@ public class ControlController : ControllerBase
 
         detalle.Cabecera.Observacion = observacion;
 
-        var updateError = await ActualizarCabeceraDespuesDeControlAsync(detalle.Cabecera, userId, cancellationToken);
-        if (updateError is not null)
-        {
-            return BadRequest(new { message = updateError });
-        }
-
         await _pedidoFlujoService.RegistrarAsync(
             detalle.Cabecera,
             "Detalle rechazado en control",
             estadoAnteriorId,
-            detalle.Cabecera.EstadoVentaId,
+            detalle.EstadoItem,
             observacion,
             detalle.Id,
             userId,
@@ -415,7 +403,7 @@ public class ControlController : ControllerBase
             pedido.MetodoEnvio?.Nombre ?? pedido.MetodoEntrega,
             pedido.TotalVenta,
             pedido.Detalles
-                .Where(x => !EstadoItemControlado(x.EstadoItem))
+                .Where(x => string.Equals(x.EstadoItem.Trim(), "CO", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(x => x.TipoMaquina?.Nombre)
                 .ThenBy(x => x.Producto?.Nombre)
                 .Select(ToDetalleDto));

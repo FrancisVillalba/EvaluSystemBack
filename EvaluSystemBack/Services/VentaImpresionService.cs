@@ -10,6 +10,7 @@ namespace EvaluSystemBack.Services;
 
 public class VentaImpresionService : IVentaImpresionService
 {
+    private const string EstadoCabeceraActivo = "AC";
     private const string EstadoVentaCarga = "PC";
     private const string EstadoVentaImpresion = "PI";
     private const string EstadoVentaControl = "CO";
@@ -62,7 +63,7 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarEstadoInicialAsync(request.EstadoVentaId);
         await ValidarCabeceraAsync(request, totalVenta.TotalVenta);
         await ValidarComprobantePagoAsync(request.FormaPagoId, request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
-        var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
+        var estadoDetalleInicial = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -72,7 +73,7 @@ public class VentaImpresionService : IVentaImpresionService
             FormaPagoId = request.FormaPagoId,
             TotalVenta = totalVenta.TotalVenta,
             MontoEnvioTransportadora = totalVenta.MontoEnvioTransportadora,
-            EstadoVentaId = estadoVentaId,
+            EstadoVentaId = EstadoCabeceraActivo,
             VendedorId = request.VendedorId,
             MontoPagado = request.MontoPagado ?? 0,
             EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId,
@@ -100,7 +101,7 @@ public class VentaImpresionService : IVentaImpresionService
                 ArchivoDisenio = NormalizarRutaArchivo(detalleRequest.ArchivoDisenio),
                 ArchivoDisenioNombre = detalleRequest.ArchivoDisenioNombre,
                 Observacion = detalleRequest.Observacion,
-                EstadoItem = string.IsNullOrWhiteSpace(detalleRequest.EstadoItem) ? EstadoDetalleInicial : detalleRequest.EstadoItem,
+                EstadoItem = estadoDetalleInicial,
                 CheckImpresion = detalleRequest.CheckImpresion ?? false
             };
 
@@ -180,17 +181,17 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarDetallesAsync(detalles);
         await ValidarCabeceraAsync(request, totalVenta.TotalVenta);
         await ValidarComprobantePagoAsync(request.FormaPagoId, request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
-        await ValidarVentaEditableAsync(cabecera);
-        await ValidarTransicionEstadoAsync(cabecera.EstadoVentaId, request.EstadoVentaId);
-        await ValidarAdjuntosParaImpresionAsync(cabecera.EstadoVentaId, request.EstadoVentaId, detalles);
-        var estadoAnteriorId = cabecera.EstadoVentaId;
+        var estadoAnteriorId = EstadoActualPedidoId(cabecera);
+        await ValidarVentaEditableAsync(estadoAnteriorId);
+        await ValidarTransicionEstadoAsync(estadoAnteriorId, request.EstadoVentaId);
+        await ValidarAdjuntosParaImpresionAsync(estadoAnteriorId, request.EstadoVentaId, detalles);
         var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
-        cabecera.EstadoVentaId = estadoVentaId;
+        cabecera.EstadoVentaId = EstadoCabeceraActivo;
         cabecera.VendedorId = request.VendedorId;
         cabecera.MontoPagado = request.MontoPagado ?? 0;
         cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
@@ -223,7 +224,7 @@ public class VentaImpresionService : IVentaImpresionService
             detalle.ArchivoDisenio = NormalizarRutaArchivo(detalleRequest.ArchivoDisenio);
             detalle.ArchivoDisenioNombre = detalleRequest.ArchivoDisenioNombre;
             detalle.Observacion = detalleRequest.Observacion;
-            detalle.EstadoItem = string.IsNullOrWhiteSpace(detalleRequest.EstadoItem) ? EstadoDetalleInicial : detalleRequest.EstadoItem;
+            detalle.EstadoItem = estadoVentaId;
             detalle.CheckImpresion = detalle.CheckImpresion == true || detalleRequest.CheckImpresion == true;
 
             if (!detalleRequest.Id.HasValue)
@@ -234,9 +235,11 @@ public class VentaImpresionService : IVentaImpresionService
 
         await _pedidoFlujoService.RegistrarAsync(
             cabecera,
-            estadoAnteriorId == cabecera.EstadoVentaId ? "Pedido modificado" : "Estado del pedido actualizado",
+            string.Equals(estadoAnteriorId, estadoVentaId, StringComparison.OrdinalIgnoreCase)
+                ? "Pedido modificado"
+                : "Estado del pedido actualizado",
             estadoAnteriorId,
-            cabecera.EstadoVentaId,
+            estadoVentaId,
             cabecera.Observacion);
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
@@ -298,7 +301,7 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.ClienteId = request.ClienteId;
         cabecera.FormaPagoId = request.FormaPagoId;
         var estadoAnteriorId = cabecera.EstadoVentaId;
-        cabecera.EstadoVentaId = estadoVentaId;
+        cabecera.EstadoVentaId = EstadoCabeceraActivo;
         cabecera.VendedorId = request.VendedorId;
         cabecera.MontoPagado = request.MontoPagado ?? 0;
         cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
@@ -346,6 +349,10 @@ public class VentaImpresionService : IVentaImpresionService
 
         var estadoAnteriorId = cabecera.EstadoVentaId;
         cabecera.EstadoVentaId = estadoEliminado.Id;
+        foreach (var detalle in cabecera.Detalles)
+        {
+            detalle.EstadoItem = EstadoVentaEliminado;
+        }
         cabecera.Observacion = request.Observacion.Trim();
 
         await _pedidoFlujoService.RegistrarAsync(cabecera, "Pedido eliminado", estadoAnteriorId, cabecera.EstadoVentaId, cabecera.Observacion);
@@ -404,7 +411,7 @@ public class VentaImpresionService : IVentaImpresionService
             ArchivoDisenio = NormalizarRutaArchivo(request.ArchivoDisenio),
             ArchivoDisenioNombre = request.ArchivoDisenioNombre,
             Observacion = request.Observacion,
-            EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? EstadoDetalleInicial : request.EstadoItem,
+            EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? EstadoVentaImpresion : request.EstadoItem,
             CheckImpresion = request.CheckImpresion ?? false
         };
 
@@ -450,7 +457,7 @@ public class VentaImpresionService : IVentaImpresionService
         detalle.ArchivoDisenio = NormalizarRutaArchivo(request.ArchivoDisenio);
         detalle.ArchivoDisenioNombre = request.ArchivoDisenioNombre;
         detalle.Observacion = request.Observacion;
-        detalle.EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? EstadoDetalleInicial : request.EstadoItem;
+        detalle.EstadoItem = string.IsNullOrWhiteSpace(request.EstadoItem) ? detalle.EstadoItem : request.EstadoItem;
         detalle.CheckImpresion = detalle.CheckImpresion == true || request.CheckImpresion == true;
 
         await _context.SaveChangesAsync();
@@ -460,6 +467,47 @@ public class VentaImpresionService : IVentaImpresionService
             .AsNoTracking()
             .FirstAsync(x => x.Id == detalleId);
 
+        return detalleActualizado.ToDto();
+    }
+
+    public async Task<VentaImpresionDetDto?> EnviarDetalleAImpresionAsync(int cabId, int detalleId)
+    {
+        var cabecera = await _context.VentasImpresionCab
+            .Include(x => x.Detalles)
+            .FirstOrDefaultAsync(x => x.Id == cabId);
+        if (cabecera is null)
+        {
+            return null;
+        }
+
+        var detalle = cabecera.Detalles.FirstOrDefault(x => x.Id == detalleId);
+        if (detalle is null)
+        {
+            return null;
+        }
+
+        if (!string.Equals(detalle.EstadoItem?.Trim(), EstadoVentaCarga, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Solo se puede enviar a impresion un item que esta en Carga.");
+        }
+
+        if (string.IsNullOrWhiteSpace(detalle.ArchivoDisenio) && string.IsNullOrWhiteSpace(detalle.ArchivoDisenioNombre))
+        {
+            throw new InvalidOperationException("Para enviar a impresion debe adjuntar el diseno del item.");
+        }
+
+        detalle.EstadoItem = EstadoVentaImpresion;
+        await _pedidoFlujoService.RegistrarAsync(
+            cabecera,
+            $"Detalle #{detalle.Id} enviado a Impresion",
+            EstadoVentaCarga,
+            EstadoVentaImpresion,
+            detalle.Observacion);
+        await _context.SaveChangesAsync();
+
+        var detalleActualizado = await QueryDetalle()
+            .AsNoTracking()
+            .FirstAsync(x => x.Id == detalleId);
         return detalleActualizado.ToDto();
     }
 
@@ -480,7 +528,11 @@ public class VentaImpresionService : IVentaImpresionService
             return false;
         }
 
-        await ValidarVentaEditableAsync(cabecera);
+        if (!string.Equals(detalle.EstadoItem?.Trim(), EstadoVentaCarga, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Solo se puede eliminar un item que esta en Carga.");
+        }
+
         if (cabecera.Detalles.Count <= 1)
         {
             throw new InvalidOperationException("La venta debe tener al menos un detalle.");
@@ -681,7 +733,12 @@ public class VentaImpresionService : IVentaImpresionService
 
     private async Task ValidarVentaEditableAsync(VentaImpresionCab cabecera)
     {
-        var estado = await ObtenerEstadoVentaActivoAsync(cabecera.EstadoVentaId, "El estado de la venta no existe.");
+        await ValidarVentaEditableAsync(EstadoActualPedidoId(cabecera));
+    }
+
+    private async Task ValidarVentaEditableAsync(string estadoActualId)
+    {
+        var estado = await ObtenerEstadoVentaActivoAsync(estadoActualId, "El estado de la venta no existe.");
         var estadoLimiteEditable = await ObtenerEstadoVentaActivoAsync(EstadoVentaLimiteEditable, "No se encontro el estado limite editable.");
 
         if (!EstadoDentroDelLimite(estado, estadoLimiteEditable))
@@ -845,6 +902,23 @@ public class VentaImpresionService : IVentaImpresionService
             _ => false
         };
     }
+    private static string EstadoActualPedidoId(VentaImpresionCab cabecera)
+    {
+        var estadosDetalle = cabecera.Detalles
+            .Where(x => !string.IsNullOrWhiteSpace(x.EstadoItem) &&
+                !string.Equals(x.EstadoItem, EstadoVentaEliminado, StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.EstadoItem.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return estadosDetalle.Count switch
+        {
+            0 => cabecera.EstadoVentaId,
+            1 => estadosDetalle[0],
+            _ => throw new InvalidOperationException("Los detalles del pedido tienen estados diferentes y no pueden avanzar todos juntos.")
+        };
+    }
+
     private static bool EstadoDentroDelLimite(EstadoVenta estado, EstadoVenta limite)
     {
         return estado.NumeroFlujo.HasValue

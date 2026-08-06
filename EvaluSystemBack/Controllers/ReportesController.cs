@@ -19,7 +19,7 @@ public class ReportesController : ControllerBase
     private const string EstadoLoteGenerado = "Generado";
     private const string EstadoLotePagado = "Pagado";
     private const string EstadoLoteAnulado = "Anulado";
-    private static readonly string[] EstadosVentaComisionables = ["CO", "EE", "PE", "PI"];
+    private static readonly string[] EstadosVentaComisionables = ["CO", "EE", "ET", "PE", "PI"];
     private readonly EvaluSystemDbContext _context;
     private readonly IWebHostEnvironment _environment;
 
@@ -266,7 +266,7 @@ public class ReportesController : ControllerBase
             .AsNoTracking()
             .Where(x => x.FechaModificacion >= from)
             .Where(x => x.FechaModificacion < toExclusive)
-            .Where(x => x.EstadoVentaId == "EE")
+            .Where(x => x.EstadoVentaId == "ET" || x.Detalles.Any(d => d.EstadoItem == "EE" || d.EstadoItem == "ET"))
             .Where(x => string.IsNullOrWhiteSpace(method) || x.MetodoEntrega == method)
             .OrderBy(x => x.MetodoEntrega)
             .ThenBy(x => x.FechaModificacion)
@@ -423,7 +423,7 @@ public class ReportesController : ControllerBase
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || scopeTeamLeaders || perfilId != null || x.VendedorId == vendedorId.Value)
             .Where(x => !x.Reposicion)
-            .Where(x => EstadosVentaComisionables.Contains(x.EstadoVentaId))
+            .Where(x => x.Detalles.Any(d => EstadosVentaComisionables.Contains(d.EstadoItem.Trim())))
             .OrderBy(x => x.VendedorId)
             .ThenBy(x => x.FechaCreacion)
             .ToListAsync();

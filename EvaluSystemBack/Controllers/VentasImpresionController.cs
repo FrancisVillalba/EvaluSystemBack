@@ -17,7 +17,7 @@ namespace EvaluSystemBack.Controllers;
 [Route("api/[controller]")]
 public class VentasImpresionController : ControllerBase
 {
-    private static readonly HashSet<string> EstadosVentaComisionables = new(StringComparer.OrdinalIgnoreCase) { "CO", "EE", "PE", "PI" };
+    private static readonly HashSet<string> EstadosVentaComisionables = new(StringComparer.OrdinalIgnoreCase) { "CO", "EE", "ET", "PE", "PI" };
     private const string ConfigMontoEnvioTransportadora = "MONTO_ENVIO_TRANSPORTADORA";
     private const int ConfigMontoEnvioTransportadoraNumero = 1;
     private const decimal MontoEnvioTransportadoraDefault = 10000;
@@ -299,7 +299,9 @@ public class VentasImpresionController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(estadoVentaId))
         {
-            query = query.Where(x => x.EstadoVentaId == estadoVentaId);
+            query = estadoVentaId is "AC" or "ET" or "XX"
+                ? query.Where(x => x.EstadoVentaId == estadoVentaId)
+                : query.Where(x => x.Detalles.Any(d => d.EstadoItem == estadoVentaId));
         }
 
         var ventas = await query
@@ -331,11 +333,12 @@ public class VentasImpresionController : ControllerBase
             var totalMetros = venta.Detalles.Sum(detalle => detalle.Cantidad);
             var perfilComisionId = SellerCommissionProfileId(
                 venta.VendedorId, perfilesPorUsuario, perfilVentasId, perfilVentaExternaId);
-            var totalComision = EstadosVentaComisionables.Contains(venta.EstadoVentaId)
-                ? venta.Detalles.Where(EsDetalleComisionable).Sum(detalle =>
-                    detalle.Cantidad * ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
-                    (detalle.PrecioExtra ?? 0))
-                : 0;
+            var totalComision = venta.Detalles
+                .Where(detalle => EstadosVentaComisionables.Contains(detalle.EstadoItem.Trim()))
+                .Where(EsDetalleComisionable)
+                .Sum(detalle => detalle.Cantidad * ResolveCommission(
+                    detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
+                    (detalle.PrecioExtra ?? 0));
 
             return new VentaUsuarioItemDto(
                 venta.Id,
@@ -471,7 +474,7 @@ public class VentasImpresionController : ControllerBase
             porcentajeTotal,
             metaMensualTotal > 0 && totalPedidosMensuales >= metaMensualTotal);
 
-        var pendientesPago = ventas
+        var pendientesPago = ventasActivas
             .Select(x => new
             {
                 Cliente = x.Cliente?.Nombre ?? "Sin cliente",
@@ -495,10 +498,10 @@ public class VentasImpresionController : ControllerBase
 
         var now = DateTime.Now;
         var etapaCarga = BuildDashboardStage(ventasActivas.Where(x => x.FechaCreacion.Date == now.Date), now, true);
-        var etapaImpresion = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "PI"), now);
-        var etapaControl = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "CO"), now);
-        var etapaPendienteEnvio = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "PE"), now);
-        var etapaEnviados = BuildDashboardStage(ventasActivas.Where(x => x.EstadoVentaId == "EE"), now, true);
+        var etapaImpresion = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "PI")), now);
+        var etapaControl = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "CO")), now);
+        var etapaPendienteEnvio = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "PE")), now);
+        var etapaEnviados = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "EE" || d.EstadoItem == "ET")), now, true);
         var etapaIncidencias = BuildDashboardStage(ventasActivas.Where(TieneIncidenciaHistorica), now);
         return Ok(new DashboardSummaryDto(
             pedidosCargadosHoy,
@@ -541,12 +544,13 @@ public class VentasImpresionController : ControllerBase
         IEnumerable<Models.VentaImpresionCab> filtered = normalizedType switch
         {
             "carga" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.FechaCreacion.Date == today),
-            "impresion" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "PI"),
-            "pendiente-envio" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "PE"),
-            "control" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "CO"),
-            "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.EstadoVentaId == "EE" && x.FechaModificacion.Date == today),
+            "impresion" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "PI")),
+            "pendiente-envio" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "PE")),
+            "control" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "CO")),
+            "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "EE" || d.EstadoItem == "ET") && x.FechaModificacion.Date == today),
             "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && TieneIncidenciaHistorica(x)),
-            "pendientes-pago" => ventas.Where(x => Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
+            "pendientes-pago" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) &&
+                Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
                 (string.IsNullOrWhiteSpace(cliente) || string.Equals(x.Cliente?.Nombre, cliente, StringComparison.OrdinalIgnoreCase))),
             _ => Array.Empty<Models.VentaImpresionCab>()
         };
@@ -655,6 +659,13 @@ public class VentasImpresionController : ControllerBase
     public async Task<ActionResult<VentaImpresionDetDto>> UpdateDetalle(int id, int detalleId, VentaImpresionDetalleCreateRequest request)
     {
         var detalle = await _ventaImpresionService.ActualizarDetalleAsync(id, detalleId, request);
+        return detalle is null ? NotFound() : Ok(detalle);
+    }
+
+    [HttpPut("{id:int}/detalles/{detalleId:int}/enviar-impresion")]
+    public async Task<ActionResult<VentaImpresionDetDto>> EnviarDetalleAImpresion(int id, int detalleId)
+    {
+        var detalle = await _ventaImpresionService.EnviarDetalleAImpresionAsync(id, detalleId);
         return detalle is null ? NotFound() : Ok(detalle);
     }
 
@@ -783,7 +794,9 @@ public class VentasImpresionController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(estadoVentaId))
         {
-            query = query.Where(x => x.EstadoVentaId == estadoVentaId);
+            query = estadoVentaId is "AC" or "ET" or "XX"
+                ? query.Where(x => x.EstadoVentaId == estadoVentaId)
+                : query.Where(x => x.Detalles.Any(d => d.EstadoItem == estadoVentaId));
         }
 
         return new FilteredVentasQuery(query, false);

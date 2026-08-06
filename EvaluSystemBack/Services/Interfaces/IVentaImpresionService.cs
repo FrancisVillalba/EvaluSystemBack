@@ -11,5 +11,6 @@ public interface IVentaImpresionService
     Task<bool> EliminarVentaAsync(int id);
     Task<VentaImpresionDetDto> CrearDetalleAsync(int cabId, VentaImpresionDetalleCreateRequest request);
     Task<VentaImpresionDetDto?> ActualizarDetalleAsync(int cabId, int detalleId, VentaImpresionDetalleCreateRequest request);
+    Task<VentaImpresionDetDto?> EnviarDetalleAImpresionAsync(int cabId, int detalleId);
     Task<bool> EliminarDetalleAsync(int cabId, int detalleId);
 }
