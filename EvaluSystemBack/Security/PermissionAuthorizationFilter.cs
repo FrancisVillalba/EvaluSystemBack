@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using EvaluSystemBack.Data;
 using EvaluSystemBack.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Controllers;
@@ -10,6 +12,7 @@ namespace EvaluSystemBack.Security;
 public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
 {
     private readonly IPermisoService _permisoService;
+    private readonly EvaluSystemDbContext _context;
 
     private static readonly Dictionary<string, string> ControllerFormularioMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -42,9 +45,12 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         ["TiposMaquina"] = "Catalogos"
     };
 
-    public PermissionAuthorizationFilter(IPermisoService permisoService)
+    public PermissionAuthorizationFilter(
+        IPermisoService permisoService,
+        EvaluSystemDbContext context)
     {
         _permisoService = permisoService;
+        _context = context;
     }
 
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
@@ -84,7 +90,8 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         }
 
         var tienePermiso = await _permisoService.UsuarioTienePermisoAsync(usuarioId, formulario, accion);
-        if (!tienePermiso)
+        if (!tienePermiso &&
+            !await CanViewOwnExternalSellerPdfAsync(descriptor, context.HttpContext.Request, usuarioId))
         {
             context.Result = new ObjectResult(new
             {
@@ -94,6 +101,31 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
                 StatusCode = StatusCodes.Status403Forbidden
             };
         }
+    }
+
+    private async Task<bool> CanViewOwnExternalSellerPdfAsync(
+        ControllerActionDescriptor descriptor,
+        HttpRequest request,
+        int usuarioId)
+    {
+        if (!descriptor.ControllerName.Equals("Reportes", StringComparison.OrdinalIgnoreCase) ||
+            !descriptor.ActionName.Equals("ExportComisionesPdf", StringComparison.OrdinalIgnoreCase) ||
+            !HttpMethods.IsGet(request.Method) ||
+            !request.Query.TryGetValue("scope", out var scope) ||
+            !scope.ToString().Equals("externos", StringComparison.OrdinalIgnoreCase) ||
+            !request.Query.TryGetValue("vendedorExternoId", out var sellerValue) ||
+            !int.TryParse(sellerValue.ToString(), out var vendedorExternoId))
+        {
+            return false;
+        }
+
+        return await _context.GrupoVentaVendedores
+            .AsNoTracking()
+            .AnyAsync(link =>
+                link.Estado &&
+                link.VendedorUsuarioId == vendedorExternoId &&
+                link.GrupoVenta.Estado &&
+                link.GrupoVenta.TeamLeaderUsuarioId == usuarioId);
     }
 
     private static bool ShouldSkip(AuthorizationFilterContext context)

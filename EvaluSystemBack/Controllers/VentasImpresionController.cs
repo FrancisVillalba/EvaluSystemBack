@@ -318,7 +318,7 @@ public class VentasImpresionController : ControllerBase
             .ToListAsync();
 
         ventas = ventas
-            .Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre))
+            .Where(EsVentaComisionable)
             .ToList();
 
         var perfilVentasId = await ProfileIdAsync("Ventas");
@@ -885,9 +885,20 @@ public class VentasImpresionController : ControllerBase
             .FirstOrDefaultAsync();
     }
 
+    private static bool EsVentaComisionable(Models.VentaImpresionCab venta)
+    {
+        var estadoId = (venta.EstadoVentaId ?? string.Empty).Trim();
+        var estado = venta.EstadoVenta?.Nombre ?? string.Empty;
+        return estadoId is not ("XX" or "RE" or "PC") &&
+            !estado.Contains("elimin", StringComparison.OrdinalIgnoreCase) &&
+            !estado.Contains("rechaz", StringComparison.OrdinalIgnoreCase) &&
+            !estado.Contains("carga", StringComparison.OrdinalIgnoreCase) &&
+            venta.Detalles.Any(EsDetalleComisionable);
+    }
+
     private static bool EsDetalleComisionable(Models.VentaImpresionDet detalle)
     {
-        return !string.Equals((detalle.EstadoItem ?? string.Empty).Trim(), "RE", StringComparison.OrdinalIgnoreCase);
+        return EstadosVentaComisionables.Contains((detalle.EstadoItem ?? string.Empty).Trim());
     }
 
     private static decimal ResolveCommission(

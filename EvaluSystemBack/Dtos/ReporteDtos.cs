@@ -24,7 +24,8 @@ public record ReporteComisionDetalleDto(
     decimal TotalDetalle,
     decimal ComisionUnitario,
     decimal ComisionTotal,
-    string? VendedorOrigen = null);
+    string? VendedorOrigen = null,
+    int? VendedorOrigenId = null);
 
 public record LotePagoDto(
     int Id,
