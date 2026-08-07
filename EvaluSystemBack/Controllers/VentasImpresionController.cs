@@ -57,12 +57,13 @@ public class VentasImpresionController : ControllerBase
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? clienteId = null,
         [FromQuery] string? estadoVentaId = null,
+        [FromQuery] string? estadoPagoId = null,
         [FromQuery] int? vendedorId = null)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var filtered = await FilteredQueryAsync(search, dateFrom, dateTo, clienteId, estadoVentaId, vendedorId);
+        var filtered = await FilteredQueryAsync(search, dateFrom, dateTo, clienteId, estadoVentaId, estadoPagoId, vendedorId);
         if (filtered.Forbidden)
         {
             return Forbid();
@@ -92,9 +93,10 @@ public class VentasImpresionController : ControllerBase
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? clienteId = null,
         [FromQuery] string? estadoVentaId = null,
+        [FromQuery] string? estadoPagoId = null,
         [FromQuery] int? vendedorId = null)
     {
-        var filtered = await FilteredQueryAsync(search, dateFrom, dateTo, clienteId, estadoVentaId, vendedorId);
+        var filtered = await FilteredQueryAsync(search, dateFrom, dateTo, clienteId, estadoVentaId, estadoPagoId, vendedorId);
         if (filtered.Forbidden)
         {
             return Forbid();
@@ -244,6 +246,7 @@ public class VentasImpresionController : ControllerBase
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] int? clienteId = null,
         [FromQuery] string? estadoVentaId = null,
+        [FromQuery] string? estadoPagoId = null,
         [FromQuery] int? vendedorId = null)
     {
         var currentUserId = CurrentUserId();
@@ -274,6 +277,7 @@ public class VentasImpresionController : ControllerBase
         var query = Query()
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
+            .Where(x => !x.Reposicion)
             .AsQueryable();
 
         if (canViewAll)
@@ -302,6 +306,11 @@ public class VentasImpresionController : ControllerBase
             query = estadoVentaId is "AC" or "ET" or "XX"
                 ? query.Where(x => x.EstadoVentaId == estadoVentaId)
                 : query.Where(x => x.Detalles.Any(d => d.EstadoItem == estadoVentaId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(estadoPagoId))
+        {
+            query = query.Where(x => x.EstadoPagadoId == estadoPagoId);
         }
 
         var ventas = await query
@@ -502,7 +511,7 @@ public class VentasImpresionController : ControllerBase
         var etapaControl = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "CO")), now);
         var etapaPendienteEnvio = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "PE")), now);
         var etapaEnviados = BuildDashboardStage(ventasActivas.Where(x => x.Detalles.Any(d => d.EstadoItem == "EE" || d.EstadoItem == "ET")), now, true);
-        var etapaIncidencias = BuildDashboardStage(ventasActivas.Where(TieneIncidenciaHistorica), now);
+        var etapaIncidencias = BuildDashboardStage(ventasActivas.Where(TieneIncidenciaActual), now);
         return Ok(new DashboardSummaryDto(
             pedidosCargadosHoy,
             pedidosCargadosHoy,
@@ -548,7 +557,7 @@ public class VentasImpresionController : ControllerBase
             "pendiente-envio" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "PE")),
             "control" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "CO")),
             "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "EE" || d.EstadoItem == "ET") && x.FechaModificacion.Date == today),
-            "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && TieneIncidenciaHistorica(x)),
+            "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && TieneIncidenciaActual(x)),
             "pendientes-pago" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) &&
                 Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
                 (string.IsNullOrWhiteSpace(cliente) || string.Equals(x.Cliente?.Nombre, cliente, StringComparison.OrdinalIgnoreCase))),
@@ -737,6 +746,7 @@ public class VentasImpresionController : ControllerBase
         DateTime? dateTo,
         int? clienteId,
         string? estadoVentaId,
+        string? estadoPagoId,
         int? vendedorId)
     {
         var query = Query().AsNoTracking();
@@ -797,6 +807,11 @@ public class VentasImpresionController : ControllerBase
             query = estadoVentaId is "AC" or "ET" or "XX"
                 ? query.Where(x => x.EstadoVentaId == estadoVentaId)
                 : query.Where(x => x.Detalles.Any(d => d.EstadoItem == estadoVentaId));
+        }
+
+        if (!string.IsNullOrWhiteSpace(estadoPagoId))
+        {
+            query = query.Where(x => x.EstadoPagadoId == estadoPagoId);
         }
 
         return new FilteredVentasQuery(query, false);
@@ -1282,11 +1297,16 @@ public class VentasImpresionController : ControllerBase
 
     private sealed record FilteredVentasQuery(IQueryable<Models.VentaImpresionCab> Query, bool Forbidden);
 
-    private bool TieneIncidenciaHistorica(Models.VentaImpresionCab pedido)
+    private static bool TieneIncidenciaActual(Models.VentaImpresionCab pedido)
     {
-        return _pedidoFlujoService.Obtener(pedido).Any(x =>
-            x.Accion.Contains("rechaz", StringComparison.OrdinalIgnoreCase) ||
-            x.Accion.Contains("devuelt", StringComparison.OrdinalIgnoreCase));
+        return pedido.Detalles.Any(detalle => EsEstadoIncidencia(detalle.EstadoItem));
+    }
+
+    private static bool EsEstadoIncidencia(string? estadoId)
+    {
+        var estado = (estadoId ?? string.Empty).Trim();
+        return estado.Equals("RE", StringComparison.OrdinalIgnoreCase) ||
+            estado.Equals("DV", StringComparison.OrdinalIgnoreCase);
     }
 
     private static DashboardStageDto BuildDashboardStage(
