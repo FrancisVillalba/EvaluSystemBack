@@ -626,7 +626,6 @@ public class VentasImpresionController : ControllerBase
         var venta = await _ventaImpresionService.ActualizarVentaCompletaAsync(id, request);
         return venta is null ? NotFound() : Ok(venta);
     }
-
     [HttpGet("{id:int}/detalles")]
     public async Task<ActionResult<IEnumerable<VentaImpresionDetDto>>> GetDetalles(int id)
     {

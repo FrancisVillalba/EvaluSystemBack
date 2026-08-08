@@ -46,18 +46,22 @@ public class GruposVentaController : ControllerBase
     public async Task<ActionResult<GrupoVentaEquipoDto>> GetMiEquipo(
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int? vendedorId = null)
+        [FromQuery] int? vendedorId = null,
+        [FromQuery] int? clienteId = null,
+        [FromQuery] string? estadoPagoId = null)
     {
-        return Ok(await BuildMiEquipoAsync(dateFrom, dateTo, vendedorId));
+        return Ok(await BuildMiEquipoAsync(dateFrom, dateTo, vendedorId, clienteId, estadoPagoId));
     }
 
     [HttpGet("mi-equipo/excel")]
     public async Task<ActionResult<ExcelFileDto>> ExportMiEquipoExcel(
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
-        [FromQuery] int? vendedorId = null)
+        [FromQuery] int? vendedorId = null,
+        [FromQuery] int? clienteId = null,
+        [FromQuery] string? estadoPagoId = null)
     {
-        var report = await BuildMiEquipoAsync(dateFrom, dateTo, vendedorId);
+        var report = await BuildMiEquipoAsync(dateFrom, dateTo, vendedorId, clienteId, estadoPagoId);
         var bytes = BuildMiEquipoXlsx(report);
         return Ok(new ExcelFileDto(
             $"grupo-ventas-{report.FechaDesde:yyyyMMdd}-{report.FechaHasta:yyyyMMdd}.xlsx",
@@ -65,7 +69,7 @@ public class GruposVentaController : ControllerBase
             Convert.ToBase64String(bytes)));
     }
 
-    private async Task<GrupoVentaEquipoDto> BuildMiEquipoAsync(DateTime? dateFrom = null, DateTime? dateTo = null, int? vendedorId = null)
+    private async Task<GrupoVentaEquipoDto> BuildMiEquipoAsync(DateTime? dateFrom = null, DateTime? dateTo = null, int? vendedorId = null, int? clienteId = null, string? estadoPagoId = null)
     {
         var usuarioId = CurrentUserId();
         if (!usuarioId.HasValue)
@@ -158,6 +162,8 @@ public class GruposVentaController : ControllerBase
             .AsNoTracking()
             .Where(x => vendedorIds.Contains(x.VendedorId))
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
+            .Where(x => !clienteId.HasValue || x.ClienteId == clienteId.Value)
+            .Where(x => string.IsNullOrWhiteSpace(estadoPagoId) || x.EstadoPagadoId == estadoPagoId)
             .OrderByDescending(x => x.FechaCreacion)
             .ToListAsync();
 
@@ -197,6 +203,7 @@ public class GruposVentaController : ControllerBase
                 x.Cliente?.Nombre ?? string.Empty,
                 x.EstadoVenta?.Nombre ?? x.EstadoVentaId,
                 x.TotalVenta,
+                x.MontoPagado ?? 0,
                 x.Detalles.Sum(detail => detail.Cantidad),
                 CalculateCommission(
                     x,
@@ -444,7 +451,7 @@ public class GruposVentaController : ControllerBase
     {
         var rows = new List<string[]>
         {
-            new[] { "Pedido", "Fecha", "Vendedor", "Cliente", "Estado", "Total venta", "Metros", "Total comision" }
+            new[] { "Pedido", "Fecha", "Vendedor", "Cliente", "Estado", "Total venta", "Total pagado", "Metros", "Total comision" }
         };
 
         rows.AddRange(report.Ventas.Select(item => new[]
@@ -455,12 +462,14 @@ public class GruposVentaController : ControllerBase
             item.Cliente,
             item.Estado,
             Money(item.TotalVenta),
+            Money(item.TotalPagado),
             item.TotalMetros.ToString("N2", CultureInfo.CurrentCulture),
             Money(item.TotalComision)
         }));
 
         rows.Add(new[]
         {
+            string.Empty,
             string.Empty,
             string.Empty,
             string.Empty,
