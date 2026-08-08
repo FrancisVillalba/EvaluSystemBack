@@ -106,9 +106,15 @@ public record ReporteResumenGerencialDto(
     decimal PromedioPedido,
     decimal TotalVendidoComisionPagada,
     decimal TotalComisionPagada,
+    IEnumerable<ReporteResumenProductoDto> VentasPorProducto,
     IEnumerable<ReporteResumenMaquinaDto> VentasPorMaquina,
     IEnumerable<ReporteResumenPerfilComisionDto> ComisionesPorPerfil);
 
+public record ReporteResumenProductoDto(
+    string Producto,
+    int CantidadPedidos,
+    decimal Cantidad,
+    decimal TotalVenta);
 public record ReporteResumenMaquinaDto(
     string Maquina,
     int CantidadPedidos,

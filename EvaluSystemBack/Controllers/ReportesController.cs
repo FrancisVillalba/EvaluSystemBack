@@ -337,6 +337,7 @@ public class ReportesController : ControllerBase
             .Include(x => x.Cliente)
             .Include(x => x.EstadoVenta)
             .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina)
+            .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
@@ -360,6 +361,23 @@ public class ReportesController : ControllerBase
 
         var totalVendido = ventas.Sum(x => x.TotalVenta);
         var cantidadPedidos = ventas.Count;
+        var ventasPorProducto = ventas
+            .SelectMany(venta => venta.Detalles.Select(detalle => new
+            {
+                PedidoId = venta.Id,
+                Producto = detalle.Producto?.Nombre ?? "Sin producto",
+                detalle.Cantidad,
+                Total = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + (detalle.PrecioExtra ?? 0))
+            }))
+            .GroupBy(x => x.Producto)
+            .Select(group => new ReporteResumenProductoDto(
+                group.Key,
+                group.Select(x => x.PedidoId).Distinct().Count(),
+                group.Sum(x => x.Cantidad),
+                group.Sum(x => x.Total)))
+            .OrderByDescending(x => x.TotalVenta)
+            .ThenBy(x => x.Producto)
+            .ToList();
         var ventasPorMaquina = ventas
             .SelectMany(venta => venta.Detalles.Select(detalle => new
             {
@@ -400,6 +418,7 @@ public class ReportesController : ControllerBase
             cantidadPedidos == 0 ? 0 : totalVendido / cantidadPedidos,
             totalVendidoComisionPagada,
             totalComisionPagada,
+            ventasPorProducto,
             ventasPorMaquina,
             new[] { comisionVentas, comisionExternas }));
     }
