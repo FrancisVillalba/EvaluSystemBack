@@ -147,6 +147,7 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
+
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
 // Configure the HTTP request pipeline.

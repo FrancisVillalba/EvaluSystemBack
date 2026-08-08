@@ -10,6 +10,7 @@ public class LotePago
     public DateTime FechaHasta { get; set; }
     public DateTime FechaPago { get; set; }
     public int? VendedorId { get; set; }
+    public int? PerfilId { get; set; }
     public decimal MontoTotal { get; set; }
     public int CantidadPersonas { get; set; }
     public string NombreArchivo { get; set; } = string.Empty;
@@ -18,5 +19,6 @@ public class LotePago
 
     public Usuario? UsuarioGenero { get; set; }
     public Usuario? Vendedor { get; set; }
+    public Perfil? Perfil { get; set; }
     public ICollection<LotePagoDetalle> Detalles { get; set; } = new List<LotePagoDetalle>();
 }

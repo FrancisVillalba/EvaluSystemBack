@@ -234,6 +234,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.FechaHasta).HasColumnName("fecha_hasta").HasColumnType("date");
             entity.Property(e => e.FechaPago).HasColumnName("fecha_pago").HasColumnType("date");
             entity.Property(e => e.VendedorId).HasColumnName("vendedor_id");
+            entity.Property(e => e.PerfilId).HasColumnName("perfil_id");
             entity.Property(e => e.MontoTotal).HasColumnName("monto_total").HasPrecision(18, 2);
             entity.Property(e => e.CantidadPersonas).HasColumnName("cantidad_personas");
             entity.Property(e => e.NombreArchivo).HasColumnName("nombre_archivo").HasMaxLength(255).IsRequired();
@@ -241,6 +242,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.ContenidoTxt).HasColumnName("contenido_txt").HasColumnType("varchar(max)").IsRequired();
             entity.HasOne(e => e.UsuarioGenero).WithMany().HasForeignKey(e => e.UsuarioGeneroId).OnDelete(DeleteBehavior.NoAction);
             entity.HasOne(e => e.Vendedor).WithMany().HasForeignKey(e => e.VendedorId).OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne(e => e.Perfil).WithMany(e => e.LotesPago).HasForeignKey(e => e.PerfilId).OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<LotePagoDetalle>(entity =>

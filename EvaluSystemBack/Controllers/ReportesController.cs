@@ -124,6 +124,7 @@ public class ReportesController : ControllerBase
         var query = _context.LotesPago
             .Include(x => x.UsuarioGenero).ThenInclude(x => x!.Persona)
             .Include(x => x.Vendedor).ThenInclude(x => x!.Persona)
+            .Include(x => x.Perfil)
             .AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(tipoPago))
@@ -349,14 +350,18 @@ public class ReportesController : ControllerBase
             .Where(EsVentaComisionable)
             .ToList();
 
-        var comisiones = await BuildComisionesAsync(from, to, vendedorId, "vendedores");
-        var comisionesExternas = await BuildComisionesAsync(from, to, vendedorId, "externos");
+        var ventasPerfilId = await ProfileIdAsync("Ventas");
+        var ventaExternaPerfilId = await ProfileIdAsync("Venta Externa");
+        var teamLeaderPerfilId = await ProfileIdAsync("Team Leader");
+        var comisiones = await BuildComisionesAsync(from, to, vendedorId, perfilId: ventasPerfilId);
+        var comisionesExternas = await BuildComisionesAsync(from, to, vendedorId, "externos", ventaExternaPerfilId);
+        var comisionesTeamLeaders = await BuildComisionesAsync(from, to, vendedorId, "team-leaders", teamLeaderPerfilId);
         var pagosComisiones = await _context.LotesPago
             .AsNoTracking()
             .Where(x => x.TipoPago == TipoPagoComisiones)
-            .Where(x => x.FechaDesde >= from && x.FechaHasta <= to)
+            .Where(x => x.FechaPago >= from && x.FechaPago < toExclusive)
             .Where(x => vendedorId == null || x.VendedorId == vendedorId.Value)
-            .Where(x => x.Estado != EstadoLoteAnulado)
+            .Where(x => x.Estado == EstadoLotePagado)
             .ToListAsync();
 
         var totalVendido = ventas.Sum(x => x.TotalVenta);
@@ -395,21 +400,27 @@ public class ReportesController : ControllerBase
             .OrderByDescending(x => x.TotalVenta)
             .ThenBy(x => x.Maquina)
             .ToList();
-        var comisionVentas = BuildResumenPerfilComision("Ventas", comisiones);
-        var comisionExternas = BuildResumenPerfilComision("Venta externa", comisionesExternas);
-        var pagosVentas = pagosComisiones
-            .Where(x => x.NombreArchivo.Contains("comisiones-vendedores-", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var pagosExternos = pagosComisiones
-            .Where(x => x.NombreArchivo.Contains("comisiones-externos-team-leaders-", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var totalComisionPagada = pagosComisiones
-            .Where(x => x.Estado == EstadoLotePagado)
-            .Sum(x => x.MontoTotal);
-        var totalVendidoComisionPagada =
-            (pagosVentas.Any(x => x.Estado == EstadoLotePagado) ? comisiones.Vendedores.Sum(x => x.TotalVenta) : 0) +
-            (pagosExternos.Any(x => x.Estado == EstadoLotePagado) ? comisionesExternas.Vendedores.Sum(x => x.TotalVenta) : 0);
+        decimal PagadoPorPerfil(int perfilId) => perfilId <= 0
+            ? 0
+            : pagosComisiones.Where(x => x.PerfilId == perfilId).Sum(x => x.MontoTotal);
 
+        var comisionVentas = BuildResumenPerfilComision(
+            ventasPerfilId,
+            "Ventas",
+            comisiones,
+            PagadoPorPerfil(ventasPerfilId));
+        var comisionExternas = BuildResumenPerfilComision(
+            ventaExternaPerfilId,
+            "Venta externa",
+            comisionesExternas,
+            PagadoPorPerfil(ventaExternaPerfilId));
+        var comisionTeamLeaders = BuildResumenPerfilComision(
+            teamLeaderPerfilId,
+            "Team Leader",
+            comisionesTeamLeaders,
+            PagadoPorPerfil(teamLeaderPerfilId));
+        var totalComisionPagada = pagosComisiones.Sum(x => x.MontoTotal);
+        var totalVendidoComisionPagada = totalVendido - totalComisionPagada;
         return Ok(new ReporteResumenGerencialDto(
             from,
             to,
@@ -420,17 +431,21 @@ public class ReportesController : ControllerBase
             totalComisionPagada,
             ventasPorProducto,
             ventasPorMaquina,
-            new[] { comisionVentas, comisionExternas }));
+            new[] { comisionVentas, comisionExternas, comisionTeamLeaders }));
     }
 
     private static ReporteResumenPerfilComisionDto BuildResumenPerfilComision(
+        int perfilId,
         string perfil,
-        ReporteComisionesDto reporte)
+        ReporteComisionesDto reporte,
+        decimal totalPagado)
     {
         return new ReporteResumenPerfilComisionDto(
+            perfilId,
             perfil,
             reporte.Vendedores.Sum(x => x.CantidadPedidos),
-            reporte.Vendedores.Sum(x => x.TotalVenta));
+            reporte.Vendedores.Sum(x => x.TotalVenta),
+            totalPagado);
     }
 
     private async Task<ReporteComisionesDto> BuildComisionesAsync(DateTime? dateFrom, DateTime? dateTo, int? vendedorId, string? scope = null, int? perfilId = null, int? vendedorExternoId = null)
@@ -803,13 +818,23 @@ public class ReportesController : ControllerBase
         string? scope,
         int? perfilId)
     {
+        var effectivePerfilId = perfilId;
+        if (!effectivePerfilId.HasValue && IsExternalCommissionsScope(scope))
+        {
+            effectivePerfilId = await ProfileIdAsync("Venta Externa");
+        }
+        else if (!effectivePerfilId.HasValue && IsTeamLeaderCommissionsScope(scope))
+        {
+            effectivePerfilId = await ProfileIdAsync("Team Leader");
+        }
+
         var scopeFilePart = IsExternalCommissionsScope(scope)
             ? "externos-team-leaders"
             : IsTeamLeaderCommissionsScope(scope)
                 ? "team-leaders"
                 : "vendedores";
-        var profileFilePart = perfilId.HasValue ? $"perfil-{perfilId.Value}" : "todos-los-perfiles";
-        var concepto = await ResolveCommissionPaymentConceptAsync(scope, perfilId);
+        var profileFilePart = effectivePerfilId.HasValue ? $"perfil-{effectivePerfilId.Value}" : "todos-los-perfiles";
+        var concepto = await ResolveCommissionPaymentConceptAsync(scope, effectivePerfilId);
         var paymentLogicVersion = IsExternalCommissionsScope(scope) ? "team-leader-estados-v4" : "estados-v4";
         var lotFilePrefix = $"comisiones-{scopeFilePart}-{profileFilePart}-{paymentLogicVersion}-";
         var existing = await _context.LotesPago
@@ -818,6 +843,7 @@ public class ReportesController : ControllerBase
             .Where(x => x.FechaDesde == report.FechaDesde.Date && x.FechaHasta == report.FechaHasta.Date)
             .Where(x => x.FechaPago == report.FechaHasta.Date)
             .Where(x => x.VendedorId == vendedorId)
+            .Where(x => x.PerfilId == effectivePerfilId)
             .Where(x => x.NombreArchivo.Contains(lotFilePrefix))
             .Where(x => x.Estado != EstadoLoteAnulado)
             .OrderByDescending(x => x.Id)
@@ -839,6 +865,7 @@ public class ReportesController : ControllerBase
             FechaHasta = report.FechaHasta.Date,
             FechaPago = report.FechaHasta.Date,
             VendedorId = vendedorId,
+            PerfilId = effectivePerfilId,
             MontoTotal = file.Rows.Sum(x => x.Monto),
             CantidadPersonas = file.Rows.Count,
             NombreArchivo = $"banco-continental-{lotFilePrefix}{sellerFilePart}-{DateTime.Now:yyyyMMddHHmm}.txt",
@@ -1109,6 +1136,8 @@ public class ReportesController : ControllerBase
             lote.FechaHasta,
             lote.FechaPago,
             lote.Vendedor is null ? null : NombreUsuario(lote.Vendedor),
+            lote.PerfilId,
+            lote.Perfil?.Nombre,
             lote.MontoTotal,
             lote.CantidadPersonas,
             lote.NombreArchivo,

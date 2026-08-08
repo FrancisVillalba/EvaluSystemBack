@@ -14,4 +14,5 @@ public class Perfil
     public ICollection<PerfilFormularioPermiso> FormularioPermisos { get; set; } = new List<PerfilFormularioPermiso>();
     public ICollection<UsuarioPerfil> Usuarios { get; set; } = new List<UsuarioPerfil>();
     public ICollection<ProductoComision> ProductoComisiones { get; set; } = new List<ProductoComision>();
+    public ICollection<LotePago> LotesPago { get; set; } = new List<LotePago>();
 }
