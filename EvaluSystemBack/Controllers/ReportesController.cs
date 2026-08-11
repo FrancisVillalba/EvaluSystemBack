@@ -82,6 +82,36 @@ public class ReportesController : ControllerBase
             Convert.ToBase64String(bytes)));
     }
 
+    [HttpGet("presupuesto-pedido/{id:int}")]
+    public async Task<ActionResult<ExcelFileDto>> ExportPresupuestoPedidoPdf(int id, CancellationToken cancellationToken)
+    {
+        var pedido = await _context.VentasImpresionCab
+            .AsNoTracking()
+            .Include(x => x.Cliente)
+            .Include(x => x.FormaPago)
+            .Include(x => x.Detalles).ThenInclude(x => x.Producto)
+            .Include(x => x.Detalles).ThenInclude(x => x.TipoMaquina)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+
+        if (pedido is null)
+        {
+            return NotFound(new { message = "No se encontro el pedido." });
+        }
+
+        var vendedor = await _context.Usuarios
+            .AsNoTracking()
+            .Where(x => x.Id == pedido.VendedorId)
+            .Select(x => x.Persona == null
+                ? x.NombreUsuario ?? $"Usuario {x.Id}"
+                : ((x.Persona.PrimerNombre ?? "") + " " + (x.Persona.PrimerApellido ?? "")).Trim())
+            .FirstOrDefaultAsync(cancellationToken) ?? $"Usuario {pedido.VendedorId}";
+
+        var bytes = CommissionPdfBuilder.BuildBudget(pedido, vendedor, _environment.WebRootPath);
+        return Ok(new ExcelFileDto(
+            $"presupuesto-pedido-{pedido.Id}.pdf",
+            "application/pdf",
+            Convert.ToBase64String(bytes)));
+    }
     [HttpGet("comisiones-vendedores/txt")]
     public async Task<ActionResult<ExcelFileDto>> ExportComisionesBancoTxt(
         [FromQuery] DateTime? dateFrom = null,
@@ -1350,6 +1380,176 @@ public class ReportesController : ControllerBase
             return WriteDocument(pages, logo);
         }
 
+        public static byte[] BuildBudget(VentaImpresionCab pedido, string vendedor, string? webRootPath)
+        {
+            var writer = new PdfPageWriter();
+            var logo = PdfPngImage.TryLoad(GetLogoPath(webRootPath));
+            DrawBudget(writer, pedido, vendedor, logo);
+            return WriteDocument(writer.Pages.ToList(), logo);
+        }
+
+        private static void DrawBudget(PdfPageWriter writer, VentaImpresionCab pedido, string vendedor, PdfPngImage? logo)
+        {
+            const decimal darkR = 0.05m;
+            const decimal darkG = 0.18m;
+            const decimal darkB = 0.24m;
+            const decimal mutedR = 0.34m;
+            const decimal mutedG = 0.44m;
+            const decimal mutedB = 0.49m;
+            var pageContentWidth = PageWidth - MarginX * 2;
+            var y = PageHeight - 24;
+
+            if (logo is not null)
+            {
+                var logoWidth = 104m;
+                var logoHeight = logoWidth * logo.Height / logo.Width;
+                writer.Image("Im1", MarginX + 8, y - 53, logoWidth, logoHeight);
+            }
+
+            writer.TextCenter(PageWidth / 2, y - 23, "PRESUPUESTO", 21, bold: true, TealR, TealG, TealB);
+            writer.TextCenter(PageWidth / 2, y - 39, "Propuesta comercial", 9, bold: false, mutedR, mutedG, mutedB);
+            writer.Text(PageWidth - MarginX - 126, y - 21, $"PEDIDO #{pedido.Id}", 12, bold: true, darkR, darkG, darkB);
+            writer.Text(PageWidth - MarginX - 126, y - 39, $"Emitido: {DateTime.Now:dd/MM/yyyy}", 9, bold: false, mutedR, mutedG, mutedB);
+
+            y -= 74;
+            var infoGap = 12m;
+            var infoWidth = (pageContentWidth - infoGap) / 2;
+            DrawInfoCard(
+                writer,
+                MarginX,
+                y,
+                infoWidth,
+                "DATOS DEL CLIENTE",
+                pedido.Cliente?.Nombre ?? "Sin cliente",
+                $"Telefono: {pedido.Cliente?.NroTelefono ?? "Sin telefono"}",
+                darkR, darkG, darkB);
+            DrawInfoCard(
+                writer,
+                MarginX + infoWidth + infoGap,
+                y,
+                infoWidth,
+                "INFORMACION DEL PEDIDO",
+                $"Vendedor: {vendedor}",
+                $"Fecha de entrega: {(pedido.FechaEntrega.HasValue ? pedido.FechaEntrega.Value.ToString("dd/MM/yyyy") : "Sin fecha")}",
+                darkR, darkG, darkB);
+
+            y -= 90;
+            writer.Text(MarginX, y, "DETALLE DEL TRABAJO", 11, bold: true, TealR, TealG, TealB);
+            writer.Text(PageWidth - MarginX - 150, y, $"{pedido.Detalles.Count} item(s)", 9, bold: false, mutedR, mutedG, mutedB);
+            y -= 10;
+
+            var widths = new[] { 34m, 250m, 116m, 70m, 100m, 90m, 102m };
+            DrawBudgetTableRow(writer, y, widths,
+                new[] { "#", "PRODUCTO / TRABAJO", "MAQUINA", "CANT.", "PRECIO UNIT.", "EXTRA", "TOTAL" },
+                header: true);
+            y -= 22;
+
+            var index = 1;
+            foreach (var detalle in pedido.Detalles.OrderBy(x => x.Id))
+            {
+                var totalDetalle = detalle.Cantidad * detalle.PrecioUnitario + (detalle.PrecioExtra ?? 0);
+                DrawBudgetTableRow(writer, y, widths, new[]
+                {
+                    index.ToString(CultureInfo.InvariantCulture),
+                    Trim(detalle.Producto?.Nombre ?? $"Producto {detalle.ProductoId}", 44),
+                    Trim(detalle.TipoMaquina?.Nombre ?? "-", 19),
+                    Quantity(detalle.Cantidad),
+                    Money(detalle.PrecioUnitario),
+                    Money(detalle.PrecioExtra ?? 0),
+                    Money(totalDetalle)
+                }, alternate: index % 2 == 0);
+                y -= 22;
+                index++;
+            }
+
+            if (pedido.MontoEnvioTransportadora > 0)
+            {
+                DrawBudgetTableRow(writer, y, widths,
+                    new[] { "", "SERVICIO DE ENVIO", "", "", "", "", Money(pedido.MontoEnvioTransportadora) },
+                    subtotal: true);
+                y -= 22;
+            }
+
+            y -= 20;
+            const decimal totalLabelWidth = 178;
+            const decimal totalAmountWidth = 184;
+            var totalX = PageWidth - MarginX - totalLabelWidth - totalAmountWidth;
+            writer.Cell(totalX, y, totalLabelWidth, 36, "TOTAL DEL TRABAJO", 11, bold: true, center: true,
+                fill: (0.88m, 0.95m, 0.96m), text: (TealR, TealG, TealB));
+            writer.Cell(totalX + totalLabelWidth, y, totalAmountWidth, 36, Money(pedido.TotalVenta), 18, bold: true, center: true,
+                fill: (TealR, TealG, TealB), text: (1, 1, 1));
+
+            y -= 62;
+            writer.Text(MarginX, y, "CONDICIONES Y OBSERVACIONES", 10, bold: true, darkR, darkG, darkB);
+            y -= 8;
+            var payment = pedido.FormaPago?.Nombre ?? pedido.FormaPagoId;
+            var delivery = string.IsNullOrWhiteSpace(pedido.MetodoEntrega) ? "Sin especificar" : pedido.MetodoEntrega.Replace('_', ' ');
+            writer.Cell(MarginX, y, pageContentWidth / 2, 24,
+                $"Forma de pago: {Trim(payment, 34)}", 9, bold: true, center: false,
+                fill: (0.96m, 0.98m, 0.99m), text: (darkR, darkG, darkB));
+            writer.Cell(MarginX + pageContentWidth / 2, y, pageContentWidth / 2, 24,
+                $"Entrega: {Trim(delivery, 34)}", 9, bold: true, center: false,
+                fill: (0.96m, 0.98m, 0.99m), text: (darkR, darkG, darkB));
+            y -= 24;
+            var note = string.IsNullOrWhiteSpace(pedido.Observacion)
+                ? "Presupuesto sujeto a confirmacion. Los importes corresponden a los productos y cantidades detallados."
+                : $"Observacion: {pedido.Observacion}";
+            writer.Cell(MarginX, y, pageContentWidth, 28, Trim(note, 125), 9, bold: false, center: false,
+                fill: (0.96m, 0.93m, 0.99m), text: (0.25m, 0.20m, 0.35m));
+
+            writer.Text(MarginX, 25, "EVALU - Presupuesto para cliente", 8, bold: true, TealR, TealG, TealB);
+            writer.Text(PageWidth - MarginX - 155, 25, $"Documento generado el {DateTime.Now:dd/MM/yyyy HH:mm}", 8, bold: false, mutedR, mutedG, mutedB);
+        }
+
+        private static void DrawInfoCard(
+            PdfPageWriter writer,
+            decimal x,
+            decimal y,
+            decimal width,
+            string title,
+            string primary,
+            string secondary,
+            decimal darkR,
+            decimal darkG,
+            decimal darkB)
+        {
+            writer.Cell(x, y, width, 22, title, 8, bold: true, center: false,
+                fill: (TealR, TealG, TealB), text: (1, 1, 1));
+            writer.Cell(x, y - 22, width, 25, Trim(primary, 54), 11, bold: true, center: false,
+                fill: (0.98m, 0.99m, 1m), text: (darkR, darkG, darkB));
+            writer.Cell(x, y - 47, width, 22, Trim(secondary, 62), 9, bold: false, center: false,
+                fill: (0.94m, 0.97m, 0.98m), text: (0.30m, 0.40m, 0.45m));
+        }
+
+        private static void DrawBudgetTableRow(
+            PdfPageWriter writer,
+            decimal y,
+            IReadOnlyList<decimal> widths,
+            IReadOnlyList<string> values,
+            bool header = false,
+            bool subtotal = false,
+            bool alternate = false)
+        {
+            var x = MarginX;
+            for (var i = 0; i < widths.Count; i++)
+            {
+                var fill = header
+                    ? (TealR, TealG, TealB)
+                    : subtotal
+                        ? (0.88m, 0.95m, 0.96m)
+                        : alternate
+                            ? (0.95m, 0.98m, 0.99m)
+                            : (0.99m, 0.995m, 1m);
+                var text = header ? (1m, 1m, 1m) : (0.03m, 0.15m, 0.20m);
+                writer.Cell(x, y, widths[i], 22, values[i], header ? 7 : 8,
+                    bold: header || subtotal || i == widths.Count - 1,
+                    center: header || i is 0 or 2,
+                    right: !header && i >= 3,
+                    fill: fill,
+                    text: text);
+                x += widths[i];
+            }
+        }
         private static string GetLogoPath(string? webRootPath)
         {
             var path = !string.IsNullOrWhiteSpace(webRootPath)

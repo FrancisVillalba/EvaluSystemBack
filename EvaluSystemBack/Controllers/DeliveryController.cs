@@ -45,23 +45,19 @@ public class DeliveryController : ControllerBase
             .OrderBy(x => x.FechaEntrega ?? x.FechaCreacion).ThenBy(x => x.Id)
             .Take(200).ToListAsync(cancellationToken);
 
-        var result = new List<DeliveryPedidoDto>();
-        foreach (var grupo in pedidos.GroupBy(x => x.ClienteId))
-        {
-            var grupoListo = grupo.All(p => p.Detalles.Count > 0 && p.Detalles.All(d => d.EstadoItem.Trim() == "PE"));
-            var faltantes = grupo.Where(p => p.Detalles.Any(d => d.EstadoItem.Trim() != "PE")).Select(p => $"#{p.Id}").ToList();
-            var mensaje = grupoListo ? null : $"Falta otro pedido para su entrega: {string.Join(", ", faltantes)}";
-            result.AddRange(grupo.Select(p => ToDto(p, grupoEntregaListo: grupoListo,
-                mensajeBloqueoEntrega: mensaje, cantidadPedidosGrupo: grupo.Count())));
-        }
-        return Ok(result);
+        var disponibles = pedidos
+            .Where(p => p.Detalles.Count > 0 && p.Detalles.All(d => d.EstadoItem.Trim() == "PE"))
+            .ToList();
+        var vendedores = await LoadVendedoresAsync(disponibles, cancellationToken);
+        return Ok(disponibles.Select(pedido => ToDto(pedido, vendedores)));
     }
     [HttpGet("transportadora")]
     public async Task<ActionResult<IEnumerable<DeliveryPedidoDto>>> GetTransportadora(CancellationToken cancellationToken)
     {
         var pedidos = await PendingByMethodAsync(MetodoEntregaTransportadora, cancellationToken);
 
-        return Ok(pedidos.Select(pedido => ToDto(pedido)));
+        var vendedores = await LoadVendedoresAsync(pedidos, cancellationToken);
+        return Ok(pedidos.Select(pedido => ToDto(pedido, vendedores)));
     }
 
     [HttpGet("motobolt")]
@@ -69,7 +65,8 @@ public class DeliveryController : ControllerBase
     {
         var pedidos = await PendingByMethodAsync(MetodoEntregaMotobolt, cancellationToken);
 
-        return Ok(pedidos.Select(pedido => ToDto(pedido)));
+        var vendedores = await LoadVendedoresAsync(pedidos, cancellationToken);
+        return Ok(pedidos.Select(pedido => ToDto(pedido, vendedores)));
     }
 
     [HttpGet("retiro-local")]
@@ -77,7 +74,8 @@ public class DeliveryController : ControllerBase
     {
         var pedidos = await PendingByMethodAsync(MetodoEntregaRetiroLocal, cancellationToken);
 
-        return Ok(pedidos.Select(pedido => ToDto(pedido)));
+        var vendedores = await LoadVendedoresAsync(pedidos, cancellationToken);
+        return Ok(pedidos.Select(pedido => ToDto(pedido, vendedores)));
     }
 
     [HttpGet("mis-pedidos")]
@@ -97,7 +95,8 @@ public class DeliveryController : ControllerBase
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(pedido => ToDto(pedido)));
+        var vendedores = await LoadVendedoresAsync(pedidos, cancellationToken);
+        return Ok(pedidos.Select(pedido => ToDto(pedido, vendedores)));
     }
 
     [HttpGet("mis-rutas")]
@@ -171,7 +170,8 @@ public class DeliveryController : ControllerBase
             .Take(500)
             .ToListAsync(cancellationToken);
 
-        return Ok(pedidos.Select(pedido => ToDto(pedido)));
+        var vendedores = await LoadVendedoresAsync(pedidos, cancellationToken);
+        return Ok(pedidos.Select(pedido => ToDto(pedido, vendedores)));
     }
 
     [HttpGet("resumen")]
@@ -409,40 +409,22 @@ public class DeliveryController : ControllerBase
         if (pedido is null) return NotFound(new { message = "No se encontro el pedido." });
         if (!CanTakeForRoute(pedido.MetodoEntrega)) return BadRequest(new { message = "Este pedido no se puede tomar para ruta." });
 
-        List<VentaImpresionCab> grupo;
-        if (string.Equals(pedido.MetodoEntrega, MetodoEntregaDelivery, StringComparison.OrdinalIgnoreCase))
+        if (pedido.UsuarioEntregaPedidoId != null || pedido.EstadoVentaId != "AC" ||
+            pedido.Detalles.Count == 0 || pedido.Detalles.Any(d => d.EstadoItem.Trim() != "PE"))
         {
-            grupo = await QueryForUpdate()
-                .Where(x => x.ClienteId == pedido.ClienteId && x.EstadoVentaId == "AC" &&
-                    x.MetodoEntrega == MetodoEntregaDelivery && x.UsuarioEntregaPedidoId == null)
-                .ToListAsync(cancellationToken);
-        }
-        else
-        {
-            grupo = [pedido];
-        }
-
-        if (grupo.Count == 0 || grupo.Any(p => p.UsuarioEntregaPedidoId != null || p.EstadoVentaId != "AC" ||
-            p.Detalles.Count == 0 || p.Detalles.Any(d => d.EstadoItem.Trim() != "PE")))
-        {
-            return BadRequest(new { message = string.Equals(pedido.MetodoEntrega, MetodoEntregaDelivery, StringComparison.OrdinalIgnoreCase)
-                ? "Falta otro pedido para su entrega."
-                : "El pedido de transportadora ya no esta disponible para tomar." });
+            return BadRequest(new { message = "El pedido no está disponible para tomar." });
         }
 
         var now = DateTime.Now;
-        foreach (var item in grupo)
-        {
-            item.UsuarioEntregaPedidoId = userId.Value;
-            item.FechaTomaDelivery = now;
-            item.UsuModificacion = userId.Value;
-            item.FechaModificacion = now;
-            await _pedidoFlujoService.RegistrarAsync(item, "Pedido tomado para envio", "PE", "PE",
-                usuarioId: userId.Value, cancellationToken: cancellationToken);
-        }
+        pedido.UsuarioEntregaPedidoId = userId.Value;
+        pedido.FechaTomaDelivery = now;
+        pedido.UsuModificacion = userId.Value;
+        pedido.FechaModificacion = now;
+        await _pedidoFlujoService.RegistrarAsync(pedido, "Pedido tomado para envio", "PE", "PE",
+            usuarioId: userId.Value, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         var updated = await Query().FirstAsync(x => x.Id == id, cancellationToken);
-        return Ok(ToDto(updated, grupoEntregaListo: true, cantidadPedidosGrupo: grupo.Count));
+        return Ok(ToDto(updated));
     }
     [HttpPost("{id:int}/quitar")]
     public async Task<IActionResult> QuitarPedidoTomado(int id, CancellationToken cancellationToken)
@@ -728,7 +710,7 @@ public class DeliveryController : ControllerBase
             })
             .ToDictionaryAsync(x => x.Id, x => x.Nombre, cancellationToken);
     }
-    private static DeliveryPedidoDto ToDto(VentaImpresionCab pedido, IReadOnlyDictionary<int, string>? vendedores = null, bool grupoEntregaListo = true, string? mensajeBloqueoEntrega = null, int cantidadPedidosGrupo = 1)
+    private static DeliveryPedidoDto ToDto(VentaImpresionCab pedido, IReadOnlyDictionary<int, string>? vendedores = null)
     {
         return new DeliveryPedidoDto(
             pedido.Id,
@@ -749,10 +731,7 @@ public class DeliveryController : ControllerBase
             pedido.UsuarioEntregaPedido is null ? null : NombreUsuario(pedido.UsuarioEntregaPedido),
             pedido.FechaTomaDelivery,
             Productos(pedido),
-            pedido.Cliente?.DatosEnvio?.Transportadora?.Nombre,
-            grupoEntregaListo,
-            mensajeBloqueoEntrega,
-            cantidadPedidosGrupo);
+            pedido.Cliente?.DatosEnvio?.Transportadora?.Nombre);
     }
 
     private static DeliveryRutaDto ToRutaDto(RutaDelivery ruta)
@@ -810,7 +789,7 @@ public class DeliveryController : ControllerBase
 
         return string.Join(", ", detalles
             .GroupBy(x => x.Producto?.Nombre ?? x.TipoMaquina?.Nombre ?? $"Detalle {x.Id}")
-            .Select(x => $"{x.Key} {Cantidad(x.Sum(d => d.Cantidad))}"));
+            .Select(x => x.Key));
     }
 
     private static bool EsDetalleAprobado(VentaImpresionDet detalle)
@@ -818,10 +797,6 @@ public class DeliveryController : ControllerBase
         return string.Equals((detalle.EstadoItem ?? string.Empty).Trim(), EstadoDetalleAprobado, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string Cantidad(decimal value)
-    {
-        return value.ToString("N2", CultureInfo.CurrentCulture).TrimEnd('0').TrimEnd(CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator[0]);
-    }
 
     private static class TransportadoraEtiquetaPdfBuilder
     {
