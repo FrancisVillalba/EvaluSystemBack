@@ -416,11 +416,17 @@ public class DeliveryController : ControllerBase
         }
 
         var now = DateTime.Now;
+        var estadoAnteriorId = pedido.EstadoVentaId;
         pedido.UsuarioEntregaPedidoId = userId.Value;
         pedido.FechaTomaDelivery = now;
+        pedido.EstadoVentaId = EstadoCabeceraEntregado;
+        foreach (var detalle in pedido.Detalles)
+        {
+            detalle.EstadoItem = EstadoDetalleEntregado;
+        }
         pedido.UsuModificacion = userId.Value;
         pedido.FechaModificacion = now;
-        await _pedidoFlujoService.RegistrarAsync(pedido, "Pedido tomado para envio", "PE", "PE",
+        await _pedidoFlujoService.RegistrarAsync(pedido, "Pedido tomado y marcado como entregado", estadoAnteriorId, pedido.EstadoVentaId,
             usuarioId: userId.Value, cancellationToken: cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         var updated = await Query().FirstAsync(x => x.Id == id, cancellationToken);
