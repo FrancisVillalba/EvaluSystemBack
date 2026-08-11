@@ -159,17 +159,22 @@ public class VentaImpresionService : IVentaImpresionService
         var totalVenta = await CalcularTotalVentaAsync(detalles, cabecera, metodoEntrega, request.ClienteId);
         if (EsActualizacionSoloPago(cabecera, request, totalVenta.TotalVenta, detalles))
         {
+            var pagoModificado = PagoModificado(cabecera, request.FormaPagoId, request.MontoPagado,
+                request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
             await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
             await ValidarComprobantePagoAsync(request.FormaPagoId, request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
 
-            cabecera.FormaPagoId = request.FormaPagoId;
-            cabecera.MontoPagado = request.MontoPagado ?? 0;
-            cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
-            cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
-            cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
+            if (pagoModificado)
+            {
+                cabecera.FormaPagoId = request.FormaPagoId;
+                cabecera.MontoPagado = request.MontoPagado ?? 0;
+                cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
+                cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
+                cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
 
-            await _pedidoFlujoService.RegistrarAsync(cabecera, "Pago del pedido actualizado", cabecera.EstadoVentaId, cabecera.EstadoVentaId);
-            await _context.SaveChangesAsync();
+                await _pedidoFlujoService.RegistrarAsync(cabecera, "Pago del pedido actualizado", cabecera.EstadoVentaId, cabecera.EstadoVentaId);
+                await _context.SaveChangesAsync();
+            }
 
             var ventaSoloPago = await QueryVentaCompleta()
                 .AsNoTracking()
@@ -265,17 +270,22 @@ public class VentaImpresionService : IVentaImpresionService
 
         if (EsActualizacionSoloPago(cabecera, request))
         {
+            var pagoModificado = PagoModificado(cabecera, request.FormaPagoId, request.MontoPagado,
+                request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
             await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
             await ValidarComprobantePagoAsync(request.FormaPagoId, request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
 
-            cabecera.FormaPagoId = request.FormaPagoId;
-            cabecera.MontoPagado = request.MontoPagado ?? 0;
-            cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
-            cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
-            cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
+            if (pagoModificado)
+            {
+                cabecera.FormaPagoId = request.FormaPagoId;
+                cabecera.MontoPagado = request.MontoPagado ?? 0;
+                cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
+                cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
+                cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
 
-            await _pedidoFlujoService.RegistrarAsync(cabecera, "Pago del pedido actualizado", cabecera.EstadoVentaId, cabecera.EstadoVentaId);
-            await _context.SaveChangesAsync();
+                await _pedidoFlujoService.RegistrarAsync(cabecera, "Pago del pedido actualizado", cabecera.EstadoVentaId, cabecera.EstadoVentaId);
+                await _context.SaveChangesAsync();
+            }
 
             var ventaSoloPago = await QueryVentaCompleta()
                 .AsNoTracking()
@@ -995,6 +1005,22 @@ public class VentaImpresionService : IVentaImpresionService
     private static bool FechasIguales(DateTime? actual, DateTime? request)
     {
         return actual?.Date == request?.Date;
+    }
+
+    private static bool PagoModificado(
+        VentaImpresionCab cabecera,
+        string formaPagoId,
+        decimal? montoPagado,
+        string? estadoPagadoId,
+        string? comprobantePago,
+        string? comprobantePagoNombre)
+    {
+        var estadoPagoNormalizado = string.IsNullOrWhiteSpace(estadoPagadoId) ? EstadoPagoPendiente : estadoPagadoId;
+        return !ValoresIguales(cabecera.FormaPagoId, formaPagoId)
+            || (cabecera.MontoPagado ?? 0) != (montoPagado ?? 0)
+            || !ValoresIguales(cabecera.EstadoPagadoId, estadoPagoNormalizado)
+            || !ValoresIguales(cabecera.ComprobantePago, NormalizarRutaArchivo(comprobantePago))
+            || !ValoresIguales(cabecera.ComprobantePagoNombre, comprobantePagoNombre);
     }
 
     private static bool ValoresIguales(string? actual, string? request)
