@@ -6,6 +6,7 @@ using System.Text;
 using EvaluSystemBack.Data;
 using EvaluSystemBack.Dtos;
 using EvaluSystemBack.Models;
+using EvaluSystemBack.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -83,6 +84,7 @@ public class ReportesController : ControllerBase
     }
 
     [HttpGet("presupuesto-pedido/{id:int}")]
+    [SkipPermission]
     public async Task<ActionResult<ExcelFileDto>> ExportPresupuestoPedidoPdf(int id, CancellationToken cancellationToken)
     {
         var pedido = await _context.VentasImpresionCab
