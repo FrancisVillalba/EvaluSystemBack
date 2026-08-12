@@ -613,7 +613,8 @@ public class ReportesController : ControllerBase
                     detalles.Sum(x => x.ComisionTotal),
                     detalles);
             })
-            .OrderBy(x => x.Vendedor)
+            .OrderByDescending(x => x.TotalComision)
+            .ThenBy(x => x.Vendedor)
             .ToList();
 
         return new ReporteComisionesDto(from, to, grouped);

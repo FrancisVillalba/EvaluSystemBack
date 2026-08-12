@@ -238,14 +238,17 @@ public class VentaImpresionService : IVentaImpresionService
             }
         }
 
-        await _pedidoFlujoService.RegistrarAsync(
-            cabecera,
-            string.Equals(estadoAnteriorId, estadoVentaId, StringComparison.OrdinalIgnoreCase)
-                ? "Pedido modificado"
-                : "Estado del pedido actualizado",
-            estadoAnteriorId,
-            estadoVentaId,
-            cabecera.Observacion);
+        if (_context.ChangeTracker.HasChanges())
+        {
+            await _pedidoFlujoService.RegistrarAsync(
+                cabecera,
+                string.Equals(estadoAnteriorId, estadoVentaId, StringComparison.OrdinalIgnoreCase)
+                    ? "Pedido modificado"
+                    : "Estado del pedido actualizado",
+                estadoAnteriorId,
+                estadoVentaId,
+                cabecera.Observacion);
+        }
         await _context.SaveChangesAsync();
         await transaction.CommitAsync();
 
@@ -323,10 +326,13 @@ public class VentaImpresionService : IVentaImpresionService
         cabecera.MontoEnvioTransportadora = await MontoEnvioTransportadoraParaActualizacionAsync(cabecera, cabecera.MetodoEntrega, request.ClienteId);
         cabecera.TotalVenta = request.TotalVenta + cabecera.MontoEnvioTransportadora;
 
-        await _pedidoFlujoService.RegistrarAsync(
-            cabecera,
-            estadoAnteriorId == cabecera.EstadoVentaId ? "Pedido modificado" : "Estado del pedido actualizado",
-            estadoAnteriorId, cabecera.EstadoVentaId, cabecera.Observacion);
+        if (_context.ChangeTracker.HasChanges())
+        {
+            await _pedidoFlujoService.RegistrarAsync(
+                cabecera,
+                estadoAnteriorId == cabecera.EstadoVentaId ? "Pedido modificado" : "Estado del pedido actualizado",
+                estadoAnteriorId, cabecera.EstadoVentaId, cabecera.Observacion);
+        }
         await _context.SaveChangesAsync();
 
         var venta = await QueryVentaCompleta()
@@ -947,7 +953,7 @@ public class VentaImpresionService : IVentaImpresionService
         return cabecera.ClienteId == request.ClienteId
             && cabecera.VendedorId == request.VendedorId
             && cabecera.TotalVenta == totalVentaRequest
-            && ValoresIguales(cabecera.EstadoVentaId, estadoVentaId)
+            && ValoresIguales(EstadoActualPedidoId(cabecera), estadoVentaId)
             && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
             && ValoresIguales(cabecera.Observacion, request.Observacion)
             && cabecera.Reposicion == request.Reposicion
@@ -960,7 +966,7 @@ public class VentaImpresionService : IVentaImpresionService
         return cabecera.ClienteId == request.ClienteId
             && cabecera.VendedorId == request.VendedorId
             && cabecera.TotalVenta == request.TotalVenta
-            && ValoresIguales(cabecera.EstadoVentaId, request.EstadoVentaId)
+            && ValoresIguales(EstadoActualPedidoId(cabecera), request.EstadoVentaId)
             && FechasIguales(cabecera.FechaEntrega, request.FechaEntrega)
             && ValoresIguales(cabecera.Observacion, request.Observacion)
             && cabecera.Reposicion == request.Reposicion
