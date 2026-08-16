@@ -271,6 +271,7 @@ public record VentaImpresionCabDto(
     string? ComprobantePagoNombre,
     string? Observacion,
     string? MetodoEntrega,
+    string? MetodoEntregaNombre,
     bool Reposicion,
     int? DeliveryUsuarioId,
     string? DeliveryUsuario,

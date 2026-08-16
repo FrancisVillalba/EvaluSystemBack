@@ -319,6 +319,7 @@ public static class DtoMapper
             entity.ComprobantePagoNombre,
             entity.Observacion,
             entity.MetodoEntrega,
+            entity.MetodoEnvio?.Nombre ?? entity.MetodoEntrega,
             entity.Reposicion,
             entity.UsuarioEntregaPedidoId,
             entity.UsuarioEntregaPedido is null ? null : NombreUsuario(entity.UsuarioEntregaPedido),
