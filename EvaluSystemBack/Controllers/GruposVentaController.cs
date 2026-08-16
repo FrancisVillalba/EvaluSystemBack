@@ -158,7 +158,8 @@ public class GruposVentaController : ControllerBase
         var ventas = await _context.VentasImpresionCab
             .Include(x => x.Cliente)
             .Include(x => x.EstadoVenta)
-            .Include(x => x.Detalles)
+            .Include(x => x.UsuarioEntregaPedido).ThenInclude(x => x!.Persona)
+            .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .AsNoTracking()
             .Where(x => vendedorIds.Contains(x.VendedorId))
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
@@ -209,7 +210,12 @@ public class GruposVentaController : ControllerBase
                     x,
                     commissionPerfilId,
                     includeExtra: includeExtraInCommission,
-                    comisiones)))
+                    comisiones),
+                x.UsuarioEntregaPedido is null ? null : NombreUsuario(x.UsuarioEntregaPedido),
+                x.Detalles.Select(detail => new GrupoVentaDetalleEstadoDto(
+                    detail.Id,
+                    detail.Producto?.Nombre ?? $"Item #{detail.Id}",
+                    detail.EstadoItem))))
             .ToList();
 
         return new GrupoVentaEquipoDto(from, to, resumen, detalle, vendedoresFiltro, canFilterSellers);
@@ -385,9 +391,7 @@ public class GruposVentaController : ControllerBase
         var nombre = string.Join(" ", new[]
         {
             usuario.Persona.PrimerNombre,
-            usuario.Persona.SegundoNombre,
             usuario.Persona.PrimerApellido,
-            usuario.Persona.SegundoApellido
         }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
         return string.IsNullOrWhiteSpace(nombre) ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}" : nombre;
