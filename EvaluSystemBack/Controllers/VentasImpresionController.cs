@@ -385,7 +385,10 @@ public class VentasImpresionController : ControllerBase
             return Forbid();
         }
 
-        return Ok(item.ToDto());
+        var estadosVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre ?? x.Id);
+        return Ok(item.ToDto(estadosVenta));
     }
 
     [HttpGet("{id:int}/flujo")]
@@ -644,7 +647,10 @@ public class VentasImpresionController : ControllerBase
             .Where(x => x.CabId == id)
             .ToListAsync();
 
-        return Ok(detalles.Select(x => x.ToDto()));
+        var estadosVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre ?? x.Id);
+        return Ok(detalles.Select(x => x.ToDto(estadosVenta)));
     }
 
     [HttpGet("{id:int}/detalles/{detalleId:int}")]
@@ -656,7 +662,15 @@ public class VentasImpresionController : ControllerBase
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.CabId == id && x.Id == detalleId);
 
-        return detalle is null ? NotFound() : Ok(detalle.ToDto());
+        if (detalle is null)
+        {
+            return NotFound();
+        }
+
+        var estadosVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre ?? x.Id);
+        return Ok(detalle.ToDto(estadosVenta));
     }
 
     [HttpPost("{id:int}/detalles")]
