@@ -297,7 +297,7 @@ public static class DtoMapper
         return entity;
     }
 
-    public static VentaImpresionCabDto ToDto(this VentaImpresionCab entity)
+    public static VentaImpresionCabDto ToDto(this VentaImpresionCab entity, IReadOnlyDictionary<string, string>? estadosVenta = null)
     {
         return new VentaImpresionCabDto(
             entity.Id,
@@ -323,7 +323,7 @@ public static class DtoMapper
             entity.UsuarioEntregaPedidoId,
             entity.UsuarioEntregaPedido is null ? null : NombreUsuario(entity.UsuarioEntregaPedido),
             entity.FechaTomaDelivery,
-            entity.Detalles.Select(x => x.ToDto()));
+            entity.Detalles.Select(x => x.ToDto(estadosVenta)));
     }
 
     public static VentaImpresionCab ToEntity(this VentaImpresionCabRequest request, VentaImpresionCab? entity = null)
@@ -363,7 +363,7 @@ public static class DtoMapper
         return string.IsNullOrWhiteSpace(nombre) ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}" : nombre;
     }
 
-    public static VentaImpresionDetDto ToDto(this VentaImpresionDet entity)
+    public static VentaImpresionDetDto ToDto(this VentaImpresionDet entity, IReadOnlyDictionary<string, string>? estadosVenta = null)
     {
         return new VentaImpresionDetDto(
             entity.Id,
@@ -380,6 +380,7 @@ public static class DtoMapper
             entity.ArchivoDisenioNombre,
             entity.Observacion,
             entity.EstadoItem,
+            estadosVenta?.GetValueOrDefault(entity.EstadoItem) ?? entity.EstadoItem,
             entity.CheckImpresion);
     }
 

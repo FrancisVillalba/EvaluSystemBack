@@ -207,7 +207,8 @@ public record GrupoVentaVentaDto(
 public record GrupoVentaDetalleEstadoDto(
     int DetalleId,
     string Producto,
-    string EstadoItem);
+    string EstadoItem,
+    string EstadoItemNombre);
 
 public record MensajePendienteDto(string Clave, string Titulo, string Mensaje, string Tipo);
 
@@ -385,6 +386,7 @@ public record VentaImpresionDetDto(
     string? ArchivoDisenioNombre,
     string? Observacion,
     string EstadoItem,
+    string EstadoItemNombre,
     bool? CheckImpresion);
 
 public record ImpresionArchivoDto(

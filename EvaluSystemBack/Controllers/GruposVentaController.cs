@@ -172,6 +172,10 @@ public class GruposVentaController : ControllerBase
             .Where(EsVentaComisionable)
             .ToList();
 
+        var estadosVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre ?? x.Id);
+
         var comisiones = await _context.ProductoComisiones
             .AsNoTracking()
             .Where(x => x.Estado)
@@ -215,7 +219,8 @@ public class GruposVentaController : ControllerBase
                 x.Detalles.Select(detail => new GrupoVentaDetalleEstadoDto(
                     detail.Id,
                     detail.Producto?.Nombre ?? $"Item #{detail.Id}",
-                    detail.EstadoItem))))
+                    detail.EstadoItem,
+                    estadosVenta.GetValueOrDefault(detail.EstadoItem, detail.EstadoItem)))))
             .ToList();
 
         return new GrupoVentaEquipoDto(from, to, resumen, detalle, vendedoresFiltro, canFilterSellers);

@@ -77,9 +77,12 @@ public class VentasImpresionController : ControllerBase
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+        var estadosVenta = await _context.EstadosVenta
+            .AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Nombre ?? x.Id);
 
         return Ok(new PagedResponse<VentaImpresionCabDto>(
-            items.Select(x => x.ToDto()),
+            items.Select(x => x.ToDto(estadosVenta)),
             page,
             pageSize,
             totalItems,
