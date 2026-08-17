@@ -251,6 +251,13 @@ public class ReportesController : ControllerBase
             .Where(x => x.TotalVenta - (x.MontoPagado ?? 0) > 0)
             .ToList();
 
+        var vendedorIds = ventas.Select(x => x.VendedorId).Distinct().ToArray();
+        var vendedores = await _context.Usuarios
+            .AsNoTracking()
+            .Include(x => x.Persona)
+            .Where(x => vendedorIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, NombreUsuario);
+
         var clientes = ventas
             .GroupBy(x => new
             {
@@ -263,6 +270,7 @@ public class ReportesController : ControllerBase
                 var pedidos = group.Select(x => new ReporteClienteDeudaPedidoDto(
                     x.Id,
                     x.FechaCreacion,
+                    vendedores.GetValueOrDefault(x.VendedorId, $"Usuario {x.VendedorId}"),
                     x.TotalVenta,
                     x.MontoPagado ?? 0,
                     Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0),

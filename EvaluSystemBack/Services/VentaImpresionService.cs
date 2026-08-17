@@ -359,8 +359,6 @@ public class VentaImpresionService : IVentaImpresionService
             return null;
         }
 
-        await ValidarVentaEliminableAsync(cabecera);
-
         var estadoEliminado = await ObtenerEstadoVentaActivoAsync(EstadoVentaEliminado, "No se encontro el estado eliminado.");
 
         var estadoAnteriorId = cabecera.EstadoVentaId;

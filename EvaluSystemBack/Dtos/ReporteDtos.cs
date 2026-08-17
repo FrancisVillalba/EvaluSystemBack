@@ -95,6 +95,7 @@ public record ReporteClienteDeudaDto(
 public record ReporteClienteDeudaPedidoDto(
     int PedidoId,
     DateTime Fecha,
+    string Vendedor,
     decimal TotalVenta,
     decimal MontoPagado,
     decimal SaldoPendiente,
