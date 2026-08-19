@@ -350,7 +350,11 @@ public record DeliveryPedidoDto(
     string? DeliveryUsuario,
     DateTime? FechaTomaDelivery,
     string Productos,
-    string? Transportadora = null);
+    string? Transportadora,
+    string FormaPagoId,
+    string? FormaPago,
+    bool EsPagoEfectivo,
+    decimal MontoDeuda);
 
 public record DeliveryResumenDto(
     int UsuarioId,

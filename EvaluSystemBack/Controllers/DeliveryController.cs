@@ -122,6 +122,7 @@ public class DeliveryController : ControllerBase
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.EstadoVenta)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.FormaPago)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.UsuarioEntregaPedido)!.ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.TipoMaquina)
@@ -620,6 +621,7 @@ public class DeliveryController : ControllerBase
             .Include(x => x.Cliente)
                 .ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.EstadoVenta)
+            .Include(x => x.FormaPago)
             .Include(x => x.MetodoEnvio)
             .Include(x => x.UsuarioEntregaPedido).ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
@@ -630,6 +632,7 @@ public class DeliveryController : ControllerBase
     {
         return _context.VentasImpresionCab
             .Include(x => x.EstadoVenta)
+            .Include(x => x.FormaPago)
             .Include(x => x.Detalles);
     }
 
@@ -644,6 +647,7 @@ public class DeliveryController : ControllerBase
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Ciudad)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Cliente)!.ThenInclude(x => x!.DatosEnvio)!.ThenInclude(x => x!.Transportadora)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.EstadoVenta)
+            .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.FormaPago)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.UsuarioEntregaPedido)!.ThenInclude(x => x!.Persona)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.Detalles).ThenInclude(x => x.Venta)!.ThenInclude(x => x!.Detalles).ThenInclude(x => x.TipoMaquina)
@@ -737,7 +741,13 @@ public class DeliveryController : ControllerBase
             pedido.UsuarioEntregaPedido is null ? null : NombreUsuario(pedido.UsuarioEntregaPedido),
             pedido.FechaTomaDelivery,
             Productos(pedido),
-            pedido.Cliente?.DatosEnvio?.Transportadora?.Nombre);
+            pedido.Cliente?.DatosEnvio?.Transportadora?.Nombre,
+            pedido.FormaPagoId,
+            pedido.FormaPago?.Nombre,
+            pedido.FormaPago?.Nombre?.Contains("efectivo", StringComparison.OrdinalIgnoreCase) == true,
+            pedido.FormaPago?.Nombre?.Contains("efectivo", StringComparison.OrdinalIgnoreCase) == true
+                ? Math.Max(0m, pedido.TotalVenta - (pedido.MontoPagado ?? 0m))
+                : 0m);
     }
 
     private static DeliveryRutaDto ToRutaDto(RutaDelivery ruta)
