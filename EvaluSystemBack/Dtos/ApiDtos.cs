@@ -442,6 +442,17 @@ public record ImpresionDevolverDto(
     string? EstadoVenta,
     string Observacion);
 
+public record ActualizarPagoVentaRequest(
+    [Required]
+    [StringLength(1)]
+    string FormaPagoId,
+    decimal? MontoPagado,
+    [StringLength(50)]
+    string? EstadoPagadoId,
+    [StringLength(5000)]
+    string? ComprobantePago,
+    [StringLength(255)]
+    string? ComprobantePagoNombre);
 public record VentaImpresionDetRequest(
     int CabId,
     int ProductoId,

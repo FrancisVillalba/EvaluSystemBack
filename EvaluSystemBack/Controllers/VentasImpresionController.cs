@@ -700,6 +700,13 @@ public class VentasImpresionController : ControllerBase
         var eliminado = await _ventaImpresionService.EliminarDetalleAsync(id, detalleId);
         return eliminado ? NoContent() : NotFound();
     }
+    [HttpPut("{id:int}/pago")]
+    public async Task<ActionResult<VentaImpresionCabDto>> ActualizarPago(int id, ActualizarPagoVentaRequest request)
+    {
+        var venta = await _ventaImpresionService.ActualizarPagoAsync(id, request);
+        return venta is null ? NotFound() : Ok(venta);
+    }
+
 
     [HttpPut("{id:int}")]
     public async Task<ActionResult<VentaImpresionCabDto>> Update(int id, VentaImpresionCabRequest request)

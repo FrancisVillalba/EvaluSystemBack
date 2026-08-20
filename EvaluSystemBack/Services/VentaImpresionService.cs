@@ -259,6 +259,41 @@ public class VentaImpresionService : IVentaImpresionService
         return venta.ToDto();
     }
 
+    public async Task<VentaImpresionCabDto?> ActualizarPagoAsync(int id, ActualizarPagoVentaRequest request)
+    {
+        var cabecera = await _context.VentasImpresionCab.FirstOrDefaultAsync(x => x.Id == id);
+        if (cabecera is null)
+        {
+            return null;
+        }
+
+        await ValidarCamposPagoAsync(request.FormaPagoId, request.MontoPagado, request.EstadoPagadoId, cabecera.TotalVenta);
+        await ValidarComprobantePagoAsync(request.FormaPagoId, request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre);
+
+        if (PagoModificado(cabecera, request.FormaPagoId, request.MontoPagado,
+            request.EstadoPagadoId, request.ComprobantePago, request.ComprobantePagoNombre))
+        {
+            cabecera.FormaPagoId = request.FormaPagoId;
+            cabecera.MontoPagado = request.MontoPagado ?? 0;
+            cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId)
+                ? EstadoPagoPendiente
+                : request.EstadoPagadoId;
+            cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
+            cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
+
+            await _pedidoFlujoService.RegistrarAsync(
+                cabecera,
+                "Pago del pedido actualizado",
+                cabecera.EstadoVentaId,
+                cabecera.EstadoVentaId);
+            await _context.SaveChangesAsync();
+        }
+
+        var venta = await QueryVentaCompleta()
+            .AsNoTracking()
+            .FirstAsync(x => x.Id == id);
+        return venta.ToDto();
+    }
     public async Task<VentaImpresionCabDto?> ActualizarCabeceraAsync(int id, VentaImpresionCabRequest request)
     {
         var cabecera = await _context.VentasImpresionCab
