@@ -202,6 +202,7 @@ public record GrupoVentaVentaDto(
     decimal TotalMetros,
     decimal TotalComision,
     string? UsuarioEntrega,
+    bool Reposicion,
     IEnumerable<GrupoVentaDetalleEstadoDto> Detalles);
 
 public record GrupoVentaDetalleEstadoDto(

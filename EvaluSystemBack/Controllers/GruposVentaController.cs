@@ -216,6 +216,7 @@ public class GruposVentaController : ControllerBase
                     includeExtra: includeExtraInCommission,
                     comisiones),
                 x.UsuarioEntregaPedido is null ? null : NombreUsuario(x.UsuarioEntregaPedido),
+                x.Reposicion,
                 x.Detalles.Select(detail => new GrupoVentaDetalleEstadoDto(
                     detail.Id,
                     detail.Producto?.Nombre ?? $"Item #{detail.Id}",
