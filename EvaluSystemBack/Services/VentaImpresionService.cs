@@ -195,14 +195,10 @@ public class VentaImpresionService : IVentaImpresionService
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         cabecera.ClienteId = request.ClienteId;
-        cabecera.FormaPagoId = request.FormaPagoId;
         cabecera.EstadoVentaId = EstadoCabeceraActivo;
         cabecera.VendedorId = request.VendedorId;
-        cabecera.MontoPagado = request.MontoPagado ?? 0;
-        cabecera.EstadoPagadoId = string.IsNullOrWhiteSpace(request.EstadoPagadoId) ? EstadoPagoPendiente : request.EstadoPagadoId;
         cabecera.FechaEntrega = request.FechaEntrega;
-        cabecera.ComprobantePago = NormalizarRutaArchivo(request.ComprobantePago);
-        cabecera.ComprobantePagoNombre = request.ComprobantePagoNombre;
+
         cabecera.Observacion = request.Observacion;
         cabecera.Reposicion = request.Reposicion;
         SetMetodoEntrega(cabecera, metodoEntrega);
