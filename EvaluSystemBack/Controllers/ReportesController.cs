@@ -223,7 +223,8 @@ public class ReportesController : ControllerBase
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] string? cliente = null,
-        [FromQuery] string? estadoPago = null)
+        [FromQuery] string? estadoPago = null,
+        [FromQuery] int? vendedorId = null)
     {
         var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
         var to = (dateTo ?? DateTime.Today).Date;
@@ -238,8 +239,11 @@ public class ReportesController : ControllerBase
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => !x.Reposicion)
-            .Where(x => x.EstadoPagadoId == "P1" || x.EstadoPagadoId == "P2")
-            .Where(x => string.IsNullOrWhiteSpace(paymentStatus) || x.EstadoPagadoId == paymentStatus)
+            .Where(x => x.EstadoPagadoId == "P1" || x.EstadoPagadoId == "P2" || x.EstadoPagadoId == "P3")
+            .Where(x => !vendedorId.HasValue || x.VendedorId == vendedorId.Value)
+            .Where(x => string.IsNullOrWhiteSpace(paymentStatus)
+                || (paymentStatus == "PENDIENTE_PARCIAL" && (x.EstadoPagadoId == "P1" || x.EstadoPagadoId == "P2"))
+                || x.EstadoPagadoId == paymentStatus)
             .OrderBy(x => x.ClienteId)
             .ThenByDescending(x => x.FechaCreacion)
             .ToListAsync();
@@ -248,7 +252,6 @@ public class ReportesController : ControllerBase
             .Where(x => x.EstadoVenta?.Nombre?.Contains("elimin", StringComparison.OrdinalIgnoreCase) != true)
             .Where(x => string.IsNullOrWhiteSpace(clientSearch) ||
                 (x.Cliente?.Nombre ?? string.Empty).Contains(clientSearch, StringComparison.OrdinalIgnoreCase))
-            .Where(x => x.TotalVenta - (x.MontoPagado ?? 0) > 0)
             .ToList();
 
         var vendedorIds = ventas.Select(x => x.VendedorId).Distinct().ToArray();
@@ -274,15 +277,21 @@ public class ReportesController : ControllerBase
                     x.TotalVenta,
                     x.MontoPagado ?? 0,
                     Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0),
-                    x.EstadoPago?.Nombre ?? (x.EstadoPagadoId == "P2" ? "Pago parcial" : "Pendiente de pago")))
+                    x.EstadoPago?.Nombre ?? (x.EstadoPagadoId == "P3" ? "Pagado" : x.EstadoPagadoId == "P2" ? "Pago parcial" : "Pendiente de pago")))
                     .OrderByDescending(x => x.Fecha)
                     .ToList();
                 var estados = pedidos.Select(x => x.EstadoPago).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var estadoIds = group.Select(x => x.EstadoPagadoId).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                var estadoResumen = estados.Count == 1
+                    ? estados[0]
+                    : estadoIds.Count == 2 && estadoIds.Contains("P1") && estadoIds.Contains("P2")
+                        ? "Pendiente / Parcial"
+                        : string.Join(" / ", estados);
                 return new ReporteClienteDeudaDto(
                     group.Key.ClienteId, group.Key.Cliente, group.Key.Telefono, pedidos.Count,
                     pedidos.Sum(x => x.TotalVenta), pedidos.Sum(x => x.MontoPagado),
                     pedidos.Sum(x => x.SaldoPendiente), pedidos.Max(x => x.Fecha),
-                    estados.Count == 1 ? estados[0] : "Pendiente / Parcial", pedidos);
+                    estadoResumen, pedidos);
             })
             .OrderByDescending(x => x.SaldoPendiente)
             .ToList();

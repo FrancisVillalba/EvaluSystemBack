@@ -129,7 +129,6 @@ public class VentasImpresionController : ControllerBase
     {
         var canViewAll = await CurrentUserCanViewAllOrdersAsync();
         var currentUserId = CurrentUserId();
-        var allowedSellerIds = await CurrentUserSellerIdsAsync();
         var canViewUserSales = canViewAll || (currentUserId.HasValue &&
             (await UserHasProfileAsync(currentUserId.Value, "Ventas") ||
              await UserHasProfileAsync(currentUserId.Value, "Venta Externa") ||
@@ -146,9 +145,7 @@ public class VentasImpresionController : ControllerBase
             .AsNoTracking()
             .Where(x => x.Estado != false)
             .ToListAsync();
-        var vendedores = canViewAll
-            ? usuarios
-            : usuarios.Where(x => allowedSellerIds.Contains(x.Id)).ToList();
+        var vendedores = usuarios;
         var estadosPago = await _context.EstadosPago.AsNoTracking().Where(x => x.Estado != false).ToListAsync();
         var estadosVenta = await _context.EstadosVenta
             .AsNoTracking()
@@ -378,11 +375,6 @@ public class VentasImpresionController : ControllerBase
         if (item is null)
         {
             return NotFound();
-        }
-
-        if (!await CurrentUserCanAccessSellerAsync(item.VendedorId))
-        {
-            return Forbid();
         }
 
         var estadosVenta = await _context.EstadosVenta
