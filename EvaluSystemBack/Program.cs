@@ -148,68 +148,6 @@ builder.Services.AddSwaggerGen(options =>
 
 var app = builder.Build();
 
-await using (var scope = app.Services.CreateAsyncScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<EvaluSystemDbContext>();
-    const string moduleName = "BuscadorGeneral";
-    var form = await db.Formularios.FirstOrDefaultAsync(x => x.Nombre == moduleName || x.Nombre == "Buscador general");
-    if (form is null)
-    {
-        form = new Formulario
-        {
-            Nombre = moduleName,
-            Descripcion = "Consulta general de ventas",
-            Ruta = "/buscador-general",
-            Icono = "search",
-            Orden = 25,
-            Estado = true
-        };
-        db.Formularios.Add(form);
-        await db.SaveChangesAsync();
-    }
-
-    else
-    {
-        form.Nombre = moduleName;
-        form.Descripcion = "Consulta general de ventas";
-        form.Ruta = "/buscador-general";
-        form.Icono = "search";
-        form.Orden = 25;
-        form.Estado = true;
-        await db.SaveChangesAsync();
-    }
-
-    var controlProfileId = await db.Perfiles
-        .Where(x => x.Estado && x.Nombre == "Control")
-        .Select(x => x.Id)
-        .FirstOrDefaultAsync();
-    if (controlProfileId > 0)
-    {
-        var permission = await db.PerfilFormularioPermisos
-            .FirstOrDefaultAsync(x => x.PerfilId == controlProfileId && x.FormularioId == form.Id);
-        if (permission is null)
-        {
-            db.PerfilFormularioPermisos.Add(new PerfilFormularioPermiso
-            {
-                PerfilId = controlProfileId,
-                FormularioId = form.Id,
-                PuedeVer = true,
-                PuedeCrear = false,
-                PuedeEditar = false,
-                PuedeEliminar = false
-            });
-        }
-        else
-        {
-            permission.PuedeVer = true;
-            permission.PuedeCrear = false;
-            permission.PuedeEditar = false;
-            permission.PuedeEliminar = false;
-        }
-        await db.SaveChangesAsync();
-    }
-}
-
 
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
