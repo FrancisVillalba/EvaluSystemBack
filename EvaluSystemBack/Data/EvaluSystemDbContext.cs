@@ -27,6 +27,7 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<LotePagoDetalle> LotesPagoDetalle => Set<LotePagoDetalle>();
     public DbSet<MetodoEnvio> MetodosEnvio => Set<MetodoEnvio>();
     public DbSet<Notificacion> Notificaciones => Set<Notificacion>();
+    public DbSet<PagoVentaImpresion> PagosVentasImpresion => Set<PagoVentaImpresion>();
     public DbSet<Perfil> Perfiles => Set<Perfil>();
     public DbSet<PerfilFormularioPermiso> PerfilFormularioPermisos => Set<PerfilFormularioPermiso>();
     public DbSet<Persona> Personas => Set<Persona>();
@@ -137,6 +138,29 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion");
             entity.Property(e => e.FechaLectura).HasColumnName("fecha_lectura");
             entity.HasOne(e => e.Usuario).WithMany().HasForeignKey(e => e.UsuarioId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<PagoVentaImpresion>(entity =>
+        {
+            entity.ToTable("PagosVentasImpresion");
+            entity.HasKey(e => e.Id).HasName("PK_PagosVentasImpresion");
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.VentaImpresionId).HasColumnName("venta_impresion_id");
+            entity.Property(e => e.FechaHora).HasColumnName("fecha_hora").HasColumnType("datetime2(7)");
+            entity.Property(e => e.UsuarioId).HasColumnName("usuario_id");
+            entity.Property(e => e.FormaPagoId).HasColumnName("forma_pago_id").HasColumnType("varchar(1)").IsRequired();
+            entity.Property(e => e.Monto).HasColumnName("monto").HasPrecision(18, 2);
+            entity.Property(e => e.RutaComprobante).HasColumnName("rutaComprobante").HasColumnType("nvarchar(max)");
+            entity.Property(e => e.NombreComprobante).HasColumnName("nombreComprobante").HasMaxLength(255);
+            entity.HasOne(e => e.Usuario)
+                .WithMany(e => e.PagosVentasImpresion)
+                .HasForeignKey(e => e.UsuarioId)
+                .OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("FK_PagosVentasImpresion_usuario");
+            entity.HasOne(e => e.Venta)
+                .WithMany(e => e.Pagos)
+                .HasForeignKey(e => e.VentaImpresionId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PagosVentasImpresion_venta");
         });
         modelBuilder.Entity<Departamento>(entity =>
         {
@@ -627,3 +651,4 @@ public class EvaluSystemDbContext : DbContext
         return underlyingType is null && type.IsValueType ? Activator.CreateInstance(type) : null;
     }
 }
+

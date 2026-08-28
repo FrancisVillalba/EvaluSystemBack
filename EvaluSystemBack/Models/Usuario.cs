@@ -14,4 +14,6 @@ public class Usuario
 
     public Persona? Persona { get; set; }
     public ICollection<UsuarioPerfil> Perfiles { get; set; } = new List<UsuarioPerfil>();
+    public ICollection<PagoVentaImpresion> PagosVentasImpresion { get; set; } = new List<PagoVentaImpresion>();
 }
+

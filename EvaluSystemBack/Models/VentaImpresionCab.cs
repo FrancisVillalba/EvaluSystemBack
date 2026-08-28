@@ -32,4 +32,6 @@ public class VentaImpresionCab
     public MetodoEnvio? MetodoEnvio { get; set; }
     public Usuario? UsuarioEntregaPedido { get; set; }
     public ICollection<VentaImpresionDet> Detalles { get; set; } = new List<VentaImpresionDet>();
+    public ICollection<PagoVentaImpresion> Pagos { get; set; } = new List<PagoVentaImpresion>();
 }
+
