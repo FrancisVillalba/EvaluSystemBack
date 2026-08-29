@@ -38,20 +38,28 @@ public class PagosVentasImpresionController : ControllerBase
         return Ok(pagos.Select(ToDto));
     }
     [HttpPost]
-    public async Task<ActionResult<PagoVentaImpresionDto>> Create(
-        PagoVentaImpresionRequest request,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<PagoVentaImpresionDto>> Create( PagoVentaImpresionRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetCurrentUserId(out var usuarioId))
         {
             return Unauthorized();
         }
 
-        if (!await _context.FormasPago.AnyAsync(
+        var formaPago = await _context.FormasPago
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
                 x => x.Id == request.FormaPagoId && x.Estado == true,
-                cancellationToken))
+                cancellationToken);
+        if (formaPago is null)
         {
-            return BadRequest(new { message = "La forma de pago no existe o est· inactiva." });
+            return BadRequest(new { message = "La forma de pago no existe o est√° inactiva." });
+        }
+
+        if (string.Equals(formaPago.Nombre?.Trim(), "Transferencia", StringComparison.OrdinalIgnoreCase)
+            && (string.IsNullOrWhiteSpace(request.RutaComprobante)
+                || string.IsNullOrWhiteSpace(request.NombreComprobante)))
+        {
+            return BadRequest(new { message = "El comprobante es obligatorio para pagos por transferencia." });
         }
 
         await using var transaction = await _context.Database.BeginTransactionAsync(

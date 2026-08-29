@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace EvaluSystemBack.Dtos;
 
 public record PagoVentaImpresionDto(
@@ -13,8 +11,8 @@ public record PagoVentaImpresionDto(
     string? NombreComprobante);
 
 public record PagoVentaImpresionRequest(
-    [Range(1, int.MaxValue)] int VentaImpresionId,
-    [Required, StringLength(1)] string FormaPagoId,
-    [Range(typeof(decimal), "0.01", "79228162514264337593543950335")] decimal Monto,
+    int VentaImpresionId,
+    string FormaPagoId,
+    decimal Monto,
     string? RutaComprobante,
-    [StringLength(255)] string? NombreComprobante);
+    string? NombreComprobante);
