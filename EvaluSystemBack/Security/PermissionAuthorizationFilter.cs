@@ -23,6 +23,7 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         ["ProductoComisiones"] = "Productos",
         ["GruposVenta"] = "Grupo de ventas",
         ["VentasImpresion"] = "Pedidos",
+        ["PagosVentasImpresion"] = "Pedidos",
         ["BuscadorGeneral"] = "BuscadorGeneral",
         ["Impresiones"] = "Impresiones",
         ["Delivery"] = "Envio",
@@ -186,3 +187,4 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         };
     }
 }
+
