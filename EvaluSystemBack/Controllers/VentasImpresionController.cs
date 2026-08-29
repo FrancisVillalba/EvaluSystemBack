@@ -600,13 +600,6 @@ public class VentasImpresionController : ControllerBase
     [HttpPost("completa")]
     public async Task<ActionResult<VentaImpresionCabDto>> CreateCompleta(VentaImpresionCompletaRequest request)
     {
-        var vendedorValidation = await ValidateSellerForCurrentUserAsync(request.VendedorId);
-        if (vendedorValidation is not null)
-        {
-            return vendedorValidation;
-        }
-
-        request = await NormalizeSellerAsync(request);
         var venta = await _ventaImpresionService.CrearVentaCompletaAsync(request);
         return CreatedAtAction(nameof(GetById), new { id = venta.Id }, venta);
     }
@@ -614,13 +607,6 @@ public class VentasImpresionController : ControllerBase
     [HttpPut("completa/{id:int}")]
     public async Task<ActionResult<VentaImpresionCabDto>> UpdateCompleta(int id, VentaImpresionCompletaUpdateRequest request)
     {
-        var vendedorValidation = await ValidateSellerForCurrentUserAsync(request.VendedorId);
-        if (vendedorValidation is not null)
-        {
-            return vendedorValidation;
-        }
-
-        request = await NormalizeSellerAsync(request);
         var venta = await _ventaImpresionService.ActualizarVentaCompletaAsync(id, request);
         return venta is null ? NotFound() : Ok(venta);
     }
@@ -703,13 +689,6 @@ public class VentasImpresionController : ControllerBase
     [HttpPut("{id:int}")]
     public async Task<ActionResult<VentaImpresionCabDto>> Update(int id, VentaImpresionCabRequest request)
     {
-        var vendedorValidation = await ValidateSellerForCurrentUserAsync(request.VendedorId);
-        if (vendedorValidation is not null)
-        {
-            return vendedorValidation;
-        }
-
-        request = await NormalizeSellerAsync(request);
         var venta = await _ventaImpresionService.ActualizarCabeceraAsync(id, request);
         return venta is null ? NotFound() : Ok(venta);
     }
