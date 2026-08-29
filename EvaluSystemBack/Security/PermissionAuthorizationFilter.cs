@@ -23,7 +23,7 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         ["ProductoComisiones"] = "Productos",
         ["GruposVenta"] = "Grupo de ventas",
         ["VentasImpresion"] = "Pedidos",
-        ["PagosVentasImpresion"] = "Pedidos",
+        ["PagosVentasImpresion"] = "Pagos",
         ["BuscadorGeneral"] = "BuscadorGeneral",
         ["Impresiones"] = "Impresiones",
         ["Delivery"] = "Envio",
@@ -82,6 +82,13 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         {
             context.Result = new ForbidResult();
             return;
+        }
+
+        if (formulario.Equals("Pagos", StringComparison.OrdinalIgnoreCase)
+            && !await _context.Formularios.AsNoTracking().AnyAsync(
+                x => x.Nombre == "Pagos" && x.Estado))
+        {
+            formulario = "Pedidos";
         }
 
         var accion = GetAccion(context.HttpContext.Request.Method);
