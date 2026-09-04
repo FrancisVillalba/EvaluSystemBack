@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using EvaluSystemBack.Data;
 using EvaluSystemBack.Dtos;
 using EvaluSystemBack.Models;
@@ -236,6 +237,7 @@ public class ReportesController : ControllerBase
             .Include(x => x.Cliente)
             .Include(x => x.EstadoPago)
             .Include(x => x.EstadoVenta)
+            .Include(x => x.Pagos)
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => !x.Reposicion)
@@ -253,6 +255,13 @@ public class ReportesController : ControllerBase
             .Where(x => string.IsNullOrWhiteSpace(clientSearch) ||
                 (x.Cliente?.Nombre ?? string.Empty).Contains(clientSearch, StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        var formasTransferencia = (await _context.FormasPago
+            .AsNoTracking()
+            .Where(x => x.Nombre != null && x.Nombre.Trim().ToLower() == "transferencia")
+            .Select(x => x.Id)
+            .ToListAsync())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var vendedorIds = ventas.Select(x => x.VendedorId).Distinct().ToArray();
         var vendedores = await _context.Usuarios
@@ -277,7 +286,8 @@ public class ReportesController : ControllerBase
                     x.TotalVenta,
                     x.MontoPagado ?? 0,
                     Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0),
-                    x.EstadoPago?.Nombre ?? (x.EstadoPagadoId == "P3" ? "Pagado" : x.EstadoPagadoId == "P2" ? "Pago parcial" : "Pendiente de pago")))
+                    x.EstadoPago?.Nombre ?? (x.EstadoPagadoId == "P3" ? "Pagado" : x.EstadoPagadoId == "P2" ? "Pago parcial" : "Pendiente de pago"),
+                    BuildTransferProofs(x, formasTransferencia)))
                     .OrderByDescending(x => x.Fecha)
                     .ToList();
                 var estados = pedidos.Select(x => x.EstadoPago).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -508,6 +518,7 @@ public class ReportesController : ControllerBase
             .Include(x => x.Cliente)
             .Include(x => x.Detalles).ThenInclude(x => x.Producto)
             .Include(x => x.EstadoVenta)
+            .Include(x => x.Pagos)
             .AsNoTracking()
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .Where(x => vendedorId == null || scopeTeamLeaders || perfilId != null || x.VendedorId == vendedorId.Value)
@@ -1194,6 +1205,64 @@ public class ReportesController : ControllerBase
             lote.Estado);
     }
 
+    private static IReadOnlyList<ReporteClienteComprobanteDto> BuildTransferProofs(
+        VentaImpresionCab venta,
+        IReadOnlySet<string> formasTransferencia)
+    {
+        var comprobantes = venta.Pagos
+            .Where(p => formasTransferencia.Contains(p.FormaPagoId) && !string.IsNullOrWhiteSpace(p.RutaComprobante))
+            .OrderByDescending(p => p.FechaHora)
+            .Select(p => new ReporteClienteComprobanteDto(
+                p.FechaHora,
+                p.Monto,
+                p.RutaComprobante!,
+                string.IsNullOrWhiteSpace(p.NombreComprobante) ? "Comprobante de transferencia" : p.NombreComprobante))
+            .ToList();
+
+        if (!formasTransferencia.Contains(venta.FormaPagoId) || string.IsNullOrWhiteSpace(venta.ComprobantePago))
+        {
+            return comprobantes;
+        }
+
+        var rutas = ParseStoredValues(venta.ComprobantePago);
+        var nombres = ParseStoredValues(venta.ComprobantePagoNombre);
+        for (var index = 0; index < rutas.Count; index++)
+        {
+            var ruta = rutas[index];
+            if (string.IsNullOrWhiteSpace(ruta) || comprobantes.Any(x => string.Equals(x.Ruta, ruta, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var nombre = index < nombres.Count && !string.IsNullOrWhiteSpace(nombres[index])
+                ? nombres[index]
+                : "Comprobante de transferencia";
+            comprobantes.Add(new ReporteClienteComprobanteDto(
+                venta.FechaCreacion,
+                venta.MontoPagado ?? 0,
+                ruta,
+                nombre));
+        }
+
+        return comprobantes.OrderByDescending(x => x.Fecha).ToList();
+    }
+
+    private static IReadOnlyList<string> ParseStoredValues(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(value) ?? new List<string>();
+        }
+        catch (JsonException)
+        {
+            return new[] { value };
+        }
+    }
     private static string NombreUsuario(Usuario usuario)
     {
         return usuario.Persona is null ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}" : NombrePersona(usuario.Persona);

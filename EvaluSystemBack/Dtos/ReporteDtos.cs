@@ -99,7 +99,14 @@ public record ReporteClienteDeudaPedidoDto(
     decimal TotalVenta,
     decimal MontoPagado,
     decimal SaldoPendiente,
-    string EstadoPago);
+    string EstadoPago,
+    IEnumerable<ReporteClienteComprobanteDto> ComprobantesTransferencia);
+
+public record ReporteClienteComprobanteDto(
+    DateTime Fecha,
+    decimal Monto,
+    string Ruta,
+    string Nombre);
 
 public record ReporteResumenGerencialDto(
     DateTime FechaDesde,
