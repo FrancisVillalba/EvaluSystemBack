@@ -730,12 +730,6 @@ public class VentaImpresionService : IVentaImpresionService
         decimal precioUnitario,
         decimal? precioExtra)
     {
-        var compraMinimaCm = await CompraMinimaCmAsync();
-        if (cantidad < compraMinimaCm)
-        {
-            throw new InvalidOperationException($"La compra minima es de {compraMinimaCm:N2} cm.");
-        }
-
         if (precioUnitario < 0 || precioExtra < 0)
         {
             throw new InvalidOperationException("Los precios no pueden ser negativos.");
@@ -757,6 +751,11 @@ public class VentaImpresionService : IVentaImpresionService
         if (producto is null)
         {
             throw new InvalidOperationException($"El producto {productoId} no existe o esta inactivo.");
+        }
+
+        if (cantidad < producto.CompraMinimaCm)
+        {
+            throw new InvalidOperationException($"La compra minima para {producto.Nombre} es de {producto.CompraMinimaCm:N2} cm.");
         }
 
         if (!await _context.TiposMaquina.AnyAsync(x => x.Id == tipoMaquinaId && x.Estado))

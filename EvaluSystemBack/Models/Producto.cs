@@ -6,6 +6,7 @@ public class Producto
     public string Nombre { get; set; } = string.Empty;
     public decimal PrecioBase { get; set; }
     public decimal PrecioMenor { get; set; } = 200000m;
+    public decimal CompraMinimaCm { get; set; } = 0.20m;
     public int? MaquinaId { get; set; }
     public bool Estado { get; set; }
     public int UsuCreacion { get; set; }

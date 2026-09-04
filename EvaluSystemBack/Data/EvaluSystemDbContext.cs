@@ -354,6 +354,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(150).IsRequired();
             entity.Property(e => e.PrecioBase).HasColumnName("precio_base").HasPrecision(18, 2);
             entity.Property(e => e.PrecioMenor).HasColumnName("precio_menor").HasPrecision(18, 2).HasDefaultValue(200000m);
+            entity.Property(e => e.CompraMinimaCm).HasColumnName("compra_minima_cm").HasPrecision(18, 2).HasDefaultValue(0.20m);
             entity.Property(e => e.MaquinaId).HasColumnName("maquinaId");
             entity.Property(e => e.Estado).HasColumnName("estado");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");

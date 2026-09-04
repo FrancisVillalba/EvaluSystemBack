@@ -420,9 +420,10 @@ public class VentasImpresionController : ControllerBase
         var ventasActivas = ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre)).ToList();
         var ventasDelDia = ventasActivas.Where(x => x.FechaCreacion.Date == today).ToList();
         var ventasDelMes = ventasActivas.Where(x => x.FechaCreacion >= monthStart && x.FechaCreacion < nextMonthStart).ToList();
-        var vendedores = await _context.Personas
+        var vendedores = await _context.Usuarios
             .AsNoTracking()
-            .ToDictionaryAsync(x => x.Id, x => NombrePersona(x));
+            .Include(x => x.Persona)
+            .ToDictionaryAsync(x => x.Id, NombreUsuario);
 
         var pedidosCargadosHoy = ventasDelDia.Count;
         var pedidosImpresos = ventasDelDia.Count(x => IsSent(x.EstadoVenta?.Nombre));

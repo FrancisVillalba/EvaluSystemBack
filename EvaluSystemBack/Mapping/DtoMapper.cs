@@ -164,7 +164,7 @@ public static class DtoMapper
 
     public static ProductoDto ToDto(this Producto entity)
     {
-        return new ProductoDto(entity.Id, entity.Nombre, entity.PrecioBase, entity.PrecioMenor, entity.MaquinaId, entity.TipoMaquina?.Nombre, entity.Estado);
+        return new ProductoDto(entity.Id, entity.Nombre, entity.PrecioBase, entity.PrecioMenor, entity.CompraMinimaCm, entity.MaquinaId, entity.TipoMaquina?.Nombre, entity.Estado);
     }
 
     public static Producto ToEntity(this ProductoRequest request, Producto? entity = null)
@@ -173,6 +173,7 @@ public static class DtoMapper
         entity.Nombre = request.Nombre;
         entity.PrecioBase = request.PrecioBase;
         entity.PrecioMenor = request.PrecioMenor;
+        entity.CompraMinimaCm = request.CompraMinimaCm;
         entity.MaquinaId = request.MaquinaId;
         entity.Estado = request.Estado;
         return entity;
