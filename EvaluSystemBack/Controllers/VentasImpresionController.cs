@@ -495,11 +495,48 @@ public class VentasImpresionController : ControllerBase
             .Take(7)
             .ToList();
 
-        var mejoresVendedores = ventasDelMes
+        var ventasComisionablesDelMes = ventasDelMes
+            .Where(EsVentaComisionable)
+            .ToList();
+        var vendedoresDelMesIds = ventasComisionablesDelMes
+            .Select(x => x.VendedorId)
+            .Distinct()
+            .ToHashSet();
+        var perfilVentasId = await ProfileIdAsync("Ventas");
+        var perfilVentaExternaId = await ProfileIdAsync("Venta Externa");
+        var perfilesPorVendedor = await _context.UsuarioPerfiles
+            .Include(x => x.Perfil)
+            .AsNoTracking()
+            .Where(x => x.Estado && x.Perfil != null && x.Perfil.Estado && vendedoresDelMesIds.Contains(x.UsuarioId))
+            .GroupBy(x => x.UsuarioId)
+            .ToDictionaryAsync(x => x.Key, x => x.Select(item => item.PerfilId).ToList());
+        var comisionesDelMes = await _context.ProductoComisiones
+            .AsNoTracking()
+            .Where(x => x.Estado)
+            .Where(x => x.FechaHasta == null || x.FechaHasta >= monthStart)
+            .Where(x => x.FechaDesde == null || x.FechaDesde < nextMonthStart)
+            .ToListAsync();
+
+        var mejoresVendedores = ventasComisionablesDelMes
             .GroupBy(x => x.VendedorId)
             .Select(x => new DashboardSellerDto(
                 vendedores.TryGetValue(x.Key, out var nombre) ? nombre : $"Vendedor {x.Key}",
-                x.Sum(item => item.TotalVenta)))
+                x.Sum(venta =>
+                {
+                    var perfilComisionId = SellerCommissionProfileId(
+                        venta.VendedorId,
+                        perfilesPorVendedor,
+                        perfilVentasId,
+                        perfilVentaExternaId);
+
+                    return venta.Detalles
+                        .Where(EsDetalleComisionable)
+                        .Sum(detalle => detalle.Cantidad * ResolveCommission(
+                            detalle.ProductoId,
+                            perfilComisionId,
+                            venta.FechaCreacion,
+                            comisionesDelMes) + (detalle.PrecioExtra ?? 0));
+                })))
             .OrderByDescending(x => x.Monto)
             .Take(7)
             .ToList();
