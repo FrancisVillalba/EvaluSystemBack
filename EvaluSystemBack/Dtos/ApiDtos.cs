@@ -133,9 +133,12 @@ public record PerfilDto(int Id, string Nombre, string? Descripcion, bool Estado)
 
 public record PerfilRequest([Required] string Nombre, string? Descripcion, bool Estado);
 
-public record TipoMaquinaDto(int Id, string Nombre, bool Estado);
+public record TipoMaquinaDto(int Id, string Nombre, decimal MetaMensual, bool Estado);
 
-public record TipoMaquinaRequest([Required] string Nombre, bool Estado);
+public record TipoMaquinaRequest(
+    [Required] string Nombre,
+    [Range(0, double.MaxValue)] decimal MetaMensual,
+    bool Estado);
 
 public record UsuarioDto(
     int Id,

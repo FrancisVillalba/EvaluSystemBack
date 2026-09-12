@@ -1268,40 +1268,19 @@ public class VentasImpresionController : ControllerBase
 
     private async Task<Dictionary<string, decimal>> GetMonthlyMachineGoalsAsync()
     {
-        var configurations = await _context.Configuraciones
-            .AsNoTracking()
-            .Where(x => x.Nombre.ToUpper().Contains("META") && x.Nombre.ToUpper().Contains("MENSUAL"))
-            .ToListAsync();
         var machines = await _context.TiposMaquina
             .AsNoTracking()
             .Where(x => x.Estado)
-            .ToDictionaryAsync(x => x.Id, x => x.Nombre);
-        var goals = machines.Values
-            .Select(MachineGroupName)
-            .Where(name => !string.Equals(name, "Sin maquina", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(name => name, _ => 0m, StringComparer.OrdinalIgnoreCase);
+            .Select(x => new { x.Nombre, MetaMensual = x.MetaMensual ?? 0 })
+            .ToListAsync();
 
-        foreach (var configuration in configurations)
-        {
-            if (!decimal.TryParse(configuration.Valor, NumberStyles.Any, CultureInfo.InvariantCulture, out var goal) || goal <= 0)
-            {
-                continue;
-            }
-
-            var machineName = machines.GetValueOrDefault(configuration.NroConfiguracion)
-                ?? configuration.Nombre
-                    .Replace("META_MENSUAL", string.Empty, StringComparison.OrdinalIgnoreCase)
-                    .Replace("Meta mensual", string.Empty, StringComparison.OrdinalIgnoreCase)
-                    .Replace("_", " ")
-                    .Trim();
-            var groupName = MachineGroupName(machineName);
-
-            goals.TryAdd(groupName, 0);
-            goals[groupName] += goal;
-        }
-
-        return goals;
+        return machines
+            .GroupBy(x => MachineGroupName(x.Nombre), StringComparer.OrdinalIgnoreCase)
+            .Where(group => !string.Equals(group.Key, "Sin maquina", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(machine => Math.Max(machine.MetaMensual, 0)),
+                StringComparer.OrdinalIgnoreCase);
     }
 
     private static string MachineGroupName(string? machineName)

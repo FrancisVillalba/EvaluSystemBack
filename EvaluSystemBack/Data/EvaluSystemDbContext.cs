@@ -423,6 +423,7 @@ public class EvaluSystemDbContext : DbContext
             entity.ToTable("Tipo_maquina");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Nombre).HasColumnName("nombre").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.MetaMensual).HasColumnName("meta_mensual").HasPrecision(18, 2).HasDefaultValue(0m);
             entity.Property(e => e.Estado).HasColumnName("estado");
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion").IsRequired();

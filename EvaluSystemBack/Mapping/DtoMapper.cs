@@ -221,13 +221,14 @@ public static class DtoMapper
 
     public static TipoMaquinaDto ToDto(this TipoMaquina entity)
     {
-        return new TipoMaquinaDto(entity.Id, entity.Nombre, entity.Estado);
+        return new TipoMaquinaDto(entity.Id, entity.Nombre, entity.MetaMensual ?? 0, entity.Estado);
     }
 
     public static TipoMaquina ToEntity(this TipoMaquinaRequest request, TipoMaquina? entity = null)
     {
         entity ??= new TipoMaquina();
         entity.Nombre = request.Nombre;
+        entity.MetaMensual = request.MetaMensual;
         entity.Estado = request.Estado;
         return entity;
     }
