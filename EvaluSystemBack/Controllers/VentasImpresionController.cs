@@ -497,7 +497,7 @@ public class VentasImpresionController : ControllerBase
             .GroupBy(x => x.Cliente)
             .Select(x => new DashboardMoneyDto(x.Key, x.Sum(item => item.Pendiente)))
             .OrderByDescending(x => x.Monto)
-            .Take(7)
+            .Take(13)
             .ToList();
 
         var ventasComisionablesDelMes = ventasDelMes
@@ -543,7 +543,7 @@ public class VentasImpresionController : ControllerBase
                             comisionesDelMes) + (detalle.PrecioExtra ?? 0));
                 })))
             .OrderByDescending(x => x.Monto)
-            .Take(7)
+            .Take(10)
             .ToList();
 
         var now = DateTime.Now;

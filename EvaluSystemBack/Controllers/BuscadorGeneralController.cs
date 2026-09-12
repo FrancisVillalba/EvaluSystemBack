@@ -500,7 +500,7 @@ public class BuscadorGeneralController : ControllerBase
             .GroupBy(x => x.Cliente)
             .Select(x => new DashboardMoneyDto(x.Key, x.Sum(item => item.Pendiente)))
             .OrderByDescending(x => x.Monto)
-            .Take(7)
+            .Take(13)
             .ToList();
 
         var mejoresVendedores = ventasDelMes
@@ -509,7 +509,7 @@ public class BuscadorGeneralController : ControllerBase
                 vendedores.TryGetValue(x.Key, out var nombre) ? nombre : $"Vendedor {x.Key}",
                 x.Sum(item => item.TotalVenta)))
             .OrderByDescending(x => x.Monto)
-            .Take(7)
+            .Take(10)
             .ToList();
 
         var now = DateTime.Now;
