@@ -512,7 +512,7 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.FechaTomaDelivery).HasColumnName("fecha_toma_delivery").HasColumnType("datetime");
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
-            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");
+            entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime").IsConcurrencyToken();
             entity.Property(e => e.UsuModificacion).HasColumnName("usu_modificacion");
             entity.HasOne(e => e.Cliente).WithMany(e => e.Ventas).HasForeignKey(e => e.ClienteId);
             entity.HasOne(e => e.FormaPago).WithMany(e => e.Ventas).HasForeignKey(e => e.FormaPagoId);

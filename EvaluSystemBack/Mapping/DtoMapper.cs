@@ -316,6 +316,7 @@ public static class DtoMapper
             entity.EstadoPagadoId,
             entity.EstadoPago?.Nombre,
             entity.FechaCreacion,
+            entity.FechaModificacion,
             entity.FechaEntrega,
             entity.ComprobantePago,
             entity.ComprobantePagoNombre,
@@ -384,7 +385,8 @@ public static class DtoMapper
             entity.Observacion,
             entity.EstadoItem,
             estadosVenta?.GetValueOrDefault(entity.EstadoItem) ?? entity.EstadoItem,
-            entity.CheckImpresion);
+            entity.CheckImpresion,
+            entity.FechaModificacion);
     }
 
     public static VentaImpresionDet ToEntity(this VentaImpresionDetRequest request, VentaImpresionDet? entity = null)

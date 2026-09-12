@@ -20,6 +20,16 @@ public class ErrorHandlingMiddleware
         {
             await _next(context);
         }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogWarning(ex, "Conflicto de concurrencia al actualizar un pedido.");
+            context.Response.StatusCode = StatusCodes.Status409Conflict;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                message = "Este pedido fue actualizado por otro usuario. Recargue la pagina antes de continuar."
+            });
+        }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException sqlException)
         {
             _logger.LogWarning(ex, "Error de base de datos.");

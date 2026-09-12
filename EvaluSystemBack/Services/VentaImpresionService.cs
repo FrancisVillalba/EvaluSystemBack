@@ -129,6 +129,15 @@ public class VentaImpresionService : IVentaImpresionService
             return null;
         }
 
+        if (request.FechaModificacion.HasValue &&
+            Math.Abs((request.FechaModificacion.Value - cabecera.FechaModificacion).TotalMilliseconds) > 10)
+        {
+            throw new DbUpdateConcurrencyException(
+                "Este pedido fue actualizado por otro usuario. Recargue la pagina antes de continuar.");
+        }
+
+        _context.Entry(cabecera).Property(x => x.FechaModificacion).OriginalValue = cabecera.FechaModificacion;
+
         var detalles = request.Detalles?.ToList() ?? new List<VentaImpresionDetalleUpdateRequest>();
         if (detalles.Count == 0)
         {
@@ -185,9 +194,14 @@ public class VentaImpresionService : IVentaImpresionService
         await ValidarCabeceraAsync(request, totalVenta.TotalVenta);
         var estadoAnteriorId = EstadoActualPedidoId(cabecera);
         await ValidarVentaEditableAsync(estadoAnteriorId);
-        await ValidarTransicionEstadoAsync(estadoAnteriorId, request.EstadoVentaId);
-        await ValidarAdjuntosParaImpresionAsync(estadoAnteriorId, request.EstadoVentaId, detalles);
-        var estadoVentaId = await ResolverEstadoVentaIdAsync(request.EstadoVentaId);
+        if (request.CambiarEstado)
+        {
+            await ValidarTransicionEstadoAsync(estadoAnteriorId, request.EstadoVentaId);
+            await ValidarAdjuntosParaImpresionAsync(estadoAnteriorId, request.EstadoVentaId, detalles);
+        }
+        var estadoVentaId = request.CambiarEstado
+            ? await ResolverEstadoVentaIdAsync(request.EstadoVentaId)
+            : estadoAnteriorId;
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -222,7 +236,10 @@ public class VentaImpresionService : IVentaImpresionService
             detalle.ArchivoDisenio = NormalizarRutaArchivo(detalleRequest.ArchivoDisenio);
             detalle.ArchivoDisenioNombre = detalleRequest.ArchivoDisenioNombre;
             detalle.Observacion = detalleRequest.Observacion;
-            detalle.EstadoItem = estadoVentaId;
+            if (request.CambiarEstado || !detalleRequest.Id.HasValue)
+            {
+                detalle.EstadoItem = estadoVentaId;
+            }
             detalle.CheckImpresion = detalle.CheckImpresion == true || detalleRequest.CheckImpresion == true;
 
             if (!detalleRequest.Id.HasValue)
