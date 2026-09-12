@@ -450,14 +450,19 @@ public class VentasImpresionController : ControllerBase
             }))
             .GroupBy(x => x.Maquina)
             .ToDictionary(x => x.Key, x => x.Sum(item => item.Monto), StringComparer.OrdinalIgnoreCase);
-        var pedidosMensualesPorMaquina = new[] { "UV DTF", "DTF TEXTIL" }
+        var metasMensuales = await GetMonthlyMachineGoalsAsync();
+        var nombresMaquina = pedidosMensualesPorGrupo.Keys
+            .Union(metasMensuales.Keys, StringComparer.OrdinalIgnoreCase)
+            .Where(nombre => !string.Equals(nombre, "Sin maquina", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(nombre => nombre)
+            .ToList();
+        var pedidosMensualesPorMaquina = nombresMaquina
             .Select(nombre => new DashboardMachineDto(nombre, pedidosMensualesPorGrupo.GetValueOrDefault(nombre, 0)))
             .ToList();
         var totalPedidosMensuales = pedidosMensualesPorMaquina.Sum(x => x.Cantidad);
 
-        var metasMensuales = await GetMonthlyMachineGoalsAsync();
         var metaMensualTotal = metasMensuales.Values.Sum();
-        var metasMensualesPorMaquina = new[] { "UV DTF", "DTF TEXTIL" }
+        var metasMensualesPorMaquina = nombresMaquina
             .Select(nombre =>
             {
                 var cantidad = pedidosMensualesPorMaquina
@@ -1269,12 +1274,13 @@ public class VentasImpresionController : ControllerBase
             .ToListAsync();
         var machines = await _context.TiposMaquina
             .AsNoTracking()
+            .Where(x => x.Estado)
             .ToDictionaryAsync(x => x.Id, x => x.Nombre);
-        var goals = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["UV DTF"] = 0,
-            ["DTF TEXTIL"] = 0
-        };
+        var goals = machines.Values
+            .Select(MachineGroupName)
+            .Where(name => !string.Equals(name, "Sin maquina", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(name => name, _ => 0m, StringComparer.OrdinalIgnoreCase);
 
         foreach (var configuration in configurations)
         {
@@ -1291,10 +1297,8 @@ public class VentasImpresionController : ControllerBase
                     .Trim();
             var groupName = MachineGroupName(machineName);
 
-            if (goals.ContainsKey(groupName))
-            {
-                goals[groupName] += goal;
-            }
+            goals.TryAdd(groupName, 0);
+            goals[groupName] += goal;
         }
 
         return goals;
@@ -1302,24 +1306,9 @@ public class VentasImpresionController : ControllerBase
 
     private static string MachineGroupName(string? machineName)
     {
-        if (string.IsNullOrWhiteSpace(machineName))
-        {
-            return "Sin maquina";
-        }
-
-        var normalized = RemoveDiacritics(machineName);
-        if (normalized.Contains("uv", StringComparison.OrdinalIgnoreCase) &&
-            normalized.Contains("dtf", StringComparison.OrdinalIgnoreCase))
-        {
-            return "UV DTF";
-        }
-
-        if (normalized.Contains("dtf", StringComparison.OrdinalIgnoreCase))
-        {
-            return "DTF TEXTIL";
-        }
-
-        return machineName;
+        return string.IsNullOrWhiteSpace(machineName)
+            ? "Sin maquina"
+            : machineName.Trim();
     }
 
     private static string RemoveDiacritics(string value)
