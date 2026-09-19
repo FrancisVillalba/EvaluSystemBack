@@ -225,6 +225,7 @@ public class ReportesController : ControllerBase
         [FromQuery] DateTime? dateTo = null,
         [FromQuery] string? cliente = null,
         [FromQuery] string? estadoPago = null,
+        [FromQuery] string? formaPagoId = null,
         [FromQuery] int? vendedorId = null)
     {
         var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
@@ -232,6 +233,7 @@ public class ReportesController : ControllerBase
         var toExclusive = to.AddDays(1);
         var clientSearch = (cliente ?? string.Empty).Trim();
         var paymentStatus = (estadoPago ?? string.Empty).Trim().ToUpperInvariant();
+        var paymentMethod = (formaPagoId ?? string.Empty).Trim();
 
         var ventas = await _context.VentasImpresionCab
             .Include(x => x.Cliente)
@@ -243,6 +245,7 @@ public class ReportesController : ControllerBase
             .Where(x => !x.Reposicion)
             .Where(x => x.EstadoPagadoId == "P1" || x.EstadoPagadoId == "P2" || x.EstadoPagadoId == "P3")
             .Where(x => !vendedorId.HasValue || x.VendedorId == vendedorId.Value)
+            .Where(x => string.IsNullOrWhiteSpace(paymentMethod) || x.FormaPagoId == paymentMethod)
             .Where(x => string.IsNullOrWhiteSpace(paymentStatus)
                 || (paymentStatus == "PENDIENTE_PARCIAL" && (x.EstadoPagadoId == "P1" || x.EstadoPagadoId == "P2"))
                 || x.EstadoPagadoId == paymentStatus)
@@ -251,7 +254,7 @@ public class ReportesController : ControllerBase
             .ToListAsync();
 
         ventas = ventas
-            .Where(x => x.EstadoVenta?.Nombre?.Contains("elimin", StringComparison.OrdinalIgnoreCase) != true)
+            .Where(x => !IsExcludedFromPaymentReport(x.EstadoVentaId, x.EstadoVenta?.Nombre))
             .Where(x => string.IsNullOrWhiteSpace(clientSearch) ||
                 (x.Cliente?.Nombre ?? string.Empty).Contains(clientSearch, StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -1199,6 +1202,15 @@ public class ReportesController : ControllerBase
             lote.Estado);
     }
 
+    private static bool IsExcludedFromPaymentReport(string? estadoId, string? estado)
+    {
+        var normalizedId = (estadoId ?? string.Empty).Trim();
+        var normalizedState = (estado ?? string.Empty).Trim();
+        return normalizedId.Equals("XX", StringComparison.OrdinalIgnoreCase)
+            || normalizedId.Equals("RE", StringComparison.OrdinalIgnoreCase)
+            || normalizedId.Contains("elimin", StringComparison.OrdinalIgnoreCase)
+            || normalizedState.Contains("elimin", StringComparison.OrdinalIgnoreCase);
+    }
     private static IReadOnlyList<ReporteClienteComprobanteDto> BuildTransferProofs(
         VentaImpresionCab venta,
         IReadOnlySet<string> formasTransferencia)

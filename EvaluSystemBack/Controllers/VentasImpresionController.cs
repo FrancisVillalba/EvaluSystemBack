@@ -485,6 +485,8 @@ public class VentasImpresionController : ControllerBase
             metaMensualTotal > 0 && totalPedidosMensuales >= metaMensualTotal);
 
         var pendientesPago = ventasActivas
+            .Where(x => !x.Reposicion)
+            .Where(x => !IsExcludedFromPendingPayment(x.EstadoVentaId, x.EstadoVenta?.Nombre))
             .Select(x => new
             {
                 Cliente = x.Cliente?.Nombre ?? "Sin cliente",
@@ -594,7 +596,8 @@ public class VentasImpresionController : ControllerBase
             "control" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "CO")),
             "enviados" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && x.Detalles.Any(d => d.EstadoItem == "EE" || d.EstadoItem == "ET") && x.FechaModificacion.Date == today),
             "incidencias" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) && TieneIncidenciaActual(x)),
-            "pendientes-pago" => ventas.Where(x => !IsDeleted(x.EstadoVentaId, x.EstadoVenta?.Nombre) &&
+            "pendientes-pago" => ventas.Where(x => !x.Reposicion &&
+                !IsExcludedFromPendingPayment(x.EstadoVentaId, x.EstadoVenta?.Nombre) &&
                 Math.Max(x.TotalVenta - (x.MontoPagado ?? 0), 0) > 0 &&
                 (string.IsNullOrWhiteSpace(cliente) || string.Equals(x.Cliente?.Nombre, cliente, StringComparison.OrdinalIgnoreCase))),
             _ => Array.Empty<Models.VentaImpresionCab>()
@@ -1062,6 +1065,14 @@ public class VentasImpresionController : ControllerBase
         return StatusContains(estadoId, "elimin")
             || StatusContains(estadoId, "eli")
             || StatusContains(estado, "elimin");
+    }
+
+    private static bool IsExcludedFromPendingPayment(string? estadoId, string? estado)
+    {
+        var normalizedId = (estadoId ?? string.Empty).Trim();
+        return IsDeleted(estadoId, estado)
+            || normalizedId.Equals("XX", StringComparison.OrdinalIgnoreCase)
+            || normalizedId.Equals("RE", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsSent(string? estado)
