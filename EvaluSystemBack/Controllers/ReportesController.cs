@@ -699,7 +699,7 @@ public class ReportesController : ControllerBase
         var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
         var comisionUnitario = ResolveComision(detalle.ProductoId, usuarioComisionId, venta.FechaCreacion, perfilesPorUsuario, comisiones);
         var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (incluirExtra ? precioExtra : 0);
-        var comisionTotal = baseComision * comisionUnitario / 100m;
+        var comisionTotal = Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
 
         return new ReporteComisionDetalleDto(
             venta.Id,
@@ -727,7 +727,7 @@ public class ReportesController : ControllerBase
         var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
         var comisionUnitario = ResolveComisionPorPerfil(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
         var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (incluirExtra ? precioExtra : 0);
-        var comisionTotal = baseComision * comisionUnitario / 100m;
+        var comisionTotal = Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
 
         return new ReporteComisionDetalleDto(
             venta.Id,

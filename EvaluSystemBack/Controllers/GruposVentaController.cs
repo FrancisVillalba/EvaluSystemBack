@@ -418,7 +418,7 @@ public class GruposVentaController : ControllerBase
         {
             var comisionUnitario = ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
             var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (includeExtra ? detalle.PrecioExtra ?? 0 : 0);
-            return baseComision * comisionUnitario / 100m;
+            return Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
         });
     }
 
