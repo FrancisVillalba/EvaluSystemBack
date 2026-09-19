@@ -92,9 +92,9 @@ public class ProductoComisionesController : ControllerBase
 
     private async Task<ActionResult?> ValidateRequestAsync(ProductoComisionRequest request, int? id = null)
     {
-        if (request.FechaDesde.HasValue && request.FechaHasta.HasValue && request.FechaHasta < request.FechaDesde)
+        if (request.Porcentaje is < 0 or > 100)
         {
-            return BadRequest(new { message = "Fecha hasta debe ser mayor o igual a fecha desde." });
+            return BadRequest(new { message = "El porcentaje de comisión debe estar entre 0 y 100." });
         }
 
         if (!await _context.Productos.AnyAsync(x => x.Id == request.ProductoId && x.Estado))
@@ -106,19 +106,14 @@ public class ProductoComisionesController : ControllerBase
         {
             return BadRequest(new { message = "Perfil no encontrado o inactivo." });
         }
-
-        var from = request.FechaDesde?.Date;
-        var to = request.FechaHasta?.Date;
         var overlaps = await _context.ProductoComisiones
             .Where(x => !id.HasValue || x.Id != id.Value)
             .Where(x => x.Estado && request.Estado)
             .Where(x => x.ProductoId == request.ProductoId && x.PerfilId == request.PerfilId)
-            .AnyAsync(x =>
-                (x.FechaHasta == null || from == null || x.FechaHasta >= from) &&
-                (to == null || x.FechaDesde == null || x.FechaDesde <= to));
+            .AnyAsync();
 
         return overlaps
-            ? BadRequest(new { message = "Ya existe una comision activa para ese producto, perfil y periodo." })
+            ? BadRequest(new { message = "Ya existe una comisión activa para ese producto y perfil." })
             : null;
     }
 }

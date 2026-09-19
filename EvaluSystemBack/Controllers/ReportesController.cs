@@ -561,8 +561,6 @@ public class ReportesController : ControllerBase
         var comisiones = await _context.ProductoComisiones
             .AsNoTracking()
             .Where(x => x.Estado)
-            .Where(x => x.FechaHasta == null || x.FechaHasta >= from)
-            .Where(x => x.FechaDesde == null || x.FechaDesde < toExclusive)
             .ToListAsync();
         var teamLeadersPorVendedor = await _context.GrupoVentaVendedores
             .Include(x => x.GrupoVenta)
@@ -697,7 +695,8 @@ public class ReportesController : ControllerBase
         var precioExtra = detalle.PrecioExtra ?? 0;
         var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
         var comisionUnitario = ResolveComision(detalle.ProductoId, usuarioComisionId, venta.FechaCreacion, perfilesPorUsuario, comisiones);
-        var comisionTotal = detalle.Cantidad * comisionUnitario + (incluirExtra ? precioExtra : 0);
+        var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (incluirExtra ? precioExtra : 0);
+        var comisionTotal = baseComision * comisionUnitario / 100m;
 
         return new ReporteComisionDetalleDto(
             venta.Id,
@@ -724,7 +723,8 @@ public class ReportesController : ControllerBase
         var precioExtra = detalle.PrecioExtra ?? 0;
         var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
         var comisionUnitario = ResolveComisionPorPerfil(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
-        var comisionTotal = detalle.Cantidad * comisionUnitario + (incluirExtra ? precioExtra : 0);
+        var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (incluirExtra ? precioExtra : 0);
+        var comisionTotal = baseComision * comisionUnitario / 100m;
 
         return new ReporteComisionDetalleDto(
             venta.Id,
@@ -756,10 +756,7 @@ public class ReportesController : ControllerBase
         var fechaVenta = fecha.Date;
         return comisiones
             .Where(x => x.ProductoId == productoId && perfilIds.Contains(x.PerfilId))
-            .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
-            .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
-            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
-            .Select(x => x.MontoPorMetro)
+            .Select(x => x.Porcentaje)
             .FirstOrDefault();
     }
 
@@ -777,10 +774,7 @@ public class ReportesController : ControllerBase
         var fechaVenta = fecha.Date;
         return comisiones
             .Where(x => x.ProductoId == productoId && x.PerfilId == perfilId)
-            .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
-            .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
-            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
-            .Select(x => x.MontoPorMetro)
+            .Select(x => x.Porcentaje)
             .FirstOrDefault();
     }
 
@@ -819,7 +813,7 @@ public class ReportesController : ControllerBase
                 Money(detail.PrecioUnitario),
                 Money(detail.PrecioExtra),
                 Money(detail.TotalDetalle),
-                Money(detail.ComisionUnitario),
+                detail.ComisionUnitario.ToString("N2", CultureInfo.CurrentCulture) + " %",
                 Money(detail.ComisionTotal)
             }));
         }
@@ -1744,7 +1738,7 @@ public class ReportesController : ControllerBase
         {
             writer.Text(MarginX, y, $"Detalle por maquina: {Trim(product, 20)}", 10, bold: true, 0.05m, 0.28m, 0.48m);
             writer.Text(MarginX + 166, y, "|", 10, bold: false, 0, 0, 0);
-            writer.Text(MarginX + 180, y, $"Comision x metro: {Money(commissionUnit)}", 8, bold: false, 0, 0, 0);
+            writer.Text(MarginX + 180, y, $"Comision: {commissionUnit:N2} %", 8, bold: false, 0, 0, 0);
 
             y -= 8;
             var widths = isTeamLeaderReport
@@ -1758,7 +1752,7 @@ public class ReportesController : ControllerBase
 
             foreach (var detail in group.OrderBy(x => x.Fecha).ThenBy(x => x.Cliente))
             {
-                var comisionProducto = detail.Cantidad * detail.ComisionUnitario;
+                var comisionProducto = detail.ComisionTotal;
                 var values = isTeamLeaderReport
                     ? new[]
                     {
@@ -1787,7 +1781,7 @@ public class ReportesController : ControllerBase
                 y -= 13;
             }
 
-            var subtotalComisionProducto = group.Sum(x => x.Cantidad * x.ComisionUnitario);
+            var subtotalComisionProducto = group.Sum(x => x.ComisionTotal);
             var subtotalValues = isTeamLeaderReport
                 ? new[]
                 {

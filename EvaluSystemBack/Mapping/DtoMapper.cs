@@ -187,10 +187,8 @@ public static class DtoMapper
             entity.Producto?.Nombre,
             entity.PerfilId,
             entity.Perfil?.Nombre,
-            entity.MontoPorMetro,
-            entity.Estado,
-            entity.FechaDesde,
-            entity.FechaHasta);
+            entity.Porcentaje,
+            entity.Estado);
     }
 
     public static ProductoComision ToEntity(this ProductoComisionRequest request, ProductoComision? entity = null)
@@ -198,10 +196,8 @@ public static class DtoMapper
         entity ??= new ProductoComision();
         entity.ProductoId = request.ProductoId;
         entity.PerfilId = request.PerfilId;
-        entity.MontoPorMetro = request.MontoPorMetro;
+        entity.Porcentaje = request.Porcentaje;
         entity.Estado = request.Estado;
-        entity.FechaDesde = request.FechaDesde?.Date;
-        entity.FechaHasta = request.FechaHasta?.Date;
         return entity;
     }
 

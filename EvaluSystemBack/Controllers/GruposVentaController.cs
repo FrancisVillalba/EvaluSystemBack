@@ -417,7 +417,8 @@ public class GruposVentaController : ControllerBase
         return venta.Detalles.Where(EsDetalleComisionable).Sum(detalle =>
         {
             var comisionUnitario = ResolveCommission(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
-            return detalle.Cantidad * comisionUnitario + (includeExtra ? detalle.PrecioExtra ?? 0 : 0);
+            var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (includeExtra ? detalle.PrecioExtra ?? 0 : 0);
+            return baseComision * comisionUnitario / 100m;
         });
     }
 
@@ -450,10 +451,7 @@ public class GruposVentaController : ControllerBase
 
         return comisiones
             .Where(x => x.ProductoId == productoId && x.PerfilId == perfilComisionId)
-            .Where(x => !x.FechaDesde.HasValue || x.FechaDesde.Value.Date <= fecha.Date)
-            .Where(x => !x.FechaHasta.HasValue || x.FechaHasta.Value.Date >= fecha.Date)
-            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
-            .Select(x => x.MontoPorMetro)
+            .Select(x => x.Porcentaje)
             .FirstOrDefault();
     }
 

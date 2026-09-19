@@ -372,10 +372,9 @@ public class EvaluSystemDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.ProductoId).HasColumnName("productoId");
             entity.Property(e => e.PerfilId).HasColumnName("perfilId");
-            entity.Property(e => e.MontoPorMetro).HasColumnName("monto_por_metro").HasPrecision(18, 2);
+            // Se conserva el nombre fisico para evitar una migracion destructiva; ahora representa un porcentaje.
+            entity.Property(e => e.Porcentaje).HasColumnName("monto_por_metro").HasPrecision(5, 2);
             entity.Property(e => e.Estado).HasColumnName("estado");
-            entity.Property(e => e.FechaDesde).HasColumnName("fecha_desde").HasColumnType("date");
-            entity.Property(e => e.FechaHasta).HasColumnName("fecha_hasta").HasColumnType("date");
             entity.Property(e => e.FechaCreacion).HasColumnName("fecha_creacion").HasColumnType("datetime");
             entity.Property(e => e.UsuCreacion).HasColumnName("usu_creacion");
             entity.Property(e => e.FechaModificacion).HasColumnName("fecha_modificacion").HasColumnType("datetime");

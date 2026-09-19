@@ -5,10 +5,8 @@ public class ProductoComision
     public int Id { get; set; }
     public int ProductoId { get; set; }
     public int PerfilId { get; set; }
-    public decimal MontoPorMetro { get; set; }
+    public decimal Porcentaje { get; set; }
     public bool Estado { get; set; }
-    public DateTime? FechaDesde { get; set; }
-    public DateTime? FechaHasta { get; set; }
     public DateTime FechaCreacion { get; set; }
     public int UsuCreacion { get; set; }
     public DateTime FechaModificacion { get; set; }

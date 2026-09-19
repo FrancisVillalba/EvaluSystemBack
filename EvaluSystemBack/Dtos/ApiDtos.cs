@@ -116,18 +116,14 @@ public record ProductoComisionDto(
     string? Producto,
     int PerfilId,
     string? Perfil,
-    decimal MontoPorMetro,
-    bool Estado,
-    DateTime? FechaDesde,
-    DateTime? FechaHasta);
+    decimal Porcentaje,
+    bool Estado);
 
 public record ProductoComisionRequest(
     [Range(1, int.MaxValue)] int ProductoId,
     [Range(1, int.MaxValue)] int PerfilId,
-    [Range(0, double.MaxValue)] decimal MontoPorMetro,
-    bool Estado,
-    DateTime? FechaDesde,
-    DateTime? FechaHasta);
+    [Range(0, 100)] decimal Porcentaje,
+    bool Estado);
 
 public record PerfilDto(int Id, string Nombre, string? Descripcion, bool Estado);
 

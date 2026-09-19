@@ -326,8 +326,6 @@ public class VentasImpresionController : ControllerBase
         var comisiones = await _context.ProductoComisiones
             .AsNoTracking()
             .Where(x => x.Estado)
-            .Where(x => x.FechaHasta == null || x.FechaHasta >= from)
-            .Where(x => x.FechaDesde == null || x.FechaDesde < toExclusive)
             .ToListAsync();
         var vendedorIds = ventas.Select(x => x.VendedorId).Distinct().ToHashSet();
         var perfilesPorUsuario = await _context.UsuarioPerfiles
@@ -345,9 +343,8 @@ public class VentasImpresionController : ControllerBase
             var totalComision = venta.Detalles
                 .Where(detalle => EstadosVentaComisionables.Contains(detalle.EstadoItem.Trim()))
                 .Where(EsDetalleComisionable)
-                .Sum(detalle => detalle.Cantidad * ResolveCommission(
-                    detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) +
-                    (detalle.PrecioExtra ?? 0));
+                .Sum(detalle => ((detalle.Cantidad * detalle.PrecioUnitario) + (detalle.PrecioExtra ?? 0)) * ResolveCommission(
+                    detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) / 100m);
 
             return new VentaUsuarioItemDto(
                 venta.Id,
@@ -518,8 +515,6 @@ public class VentasImpresionController : ControllerBase
         var comisionesDelMes = await _context.ProductoComisiones
             .AsNoTracking()
             .Where(x => x.Estado)
-            .Where(x => x.FechaHasta == null || x.FechaHasta >= monthStart)
-            .Where(x => x.FechaDesde == null || x.FechaDesde < nextMonthStart)
             .ToListAsync();
 
         var mejoresVendedores = ventasComisionablesDelMes
@@ -536,11 +531,11 @@ public class VentasImpresionController : ControllerBase
 
                     return venta.Detalles
                         .Where(EsDetalleComisionable)
-                        .Sum(detalle => detalle.Cantidad * ResolveCommission(
+                        .Sum(detalle => ((detalle.Cantidad * detalle.PrecioUnitario) + (detalle.PrecioExtra ?? 0)) * ResolveCommission(
                             detalle.ProductoId,
                             perfilComisionId,
                             venta.FechaCreacion,
-                            comisionesDelMes) + (detalle.PrecioExtra ?? 0));
+                            comisionesDelMes) / 100m);
                 })))
             .OrderByDescending(x => x.Monto)
             .Take(10)
@@ -952,10 +947,7 @@ public class VentasImpresionController : ControllerBase
         var fechaVenta = fecha.Date;
         return comisiones
             .Where(x => x.ProductoId == productoId && x.PerfilId == perfilId)
-            .Where(x => x.FechaDesde == null || x.FechaDesde.Value.Date <= fechaVenta)
-            .Where(x => x.FechaHasta == null || x.FechaHasta.Value.Date >= fechaVenta)
-            .OrderByDescending(x => x.FechaDesde ?? DateTime.MinValue)
-            .Select(x => x.MontoPorMetro)
+            .Select(x => x.Porcentaje)
             .FirstOrDefault();
     }
 
