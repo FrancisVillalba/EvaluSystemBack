@@ -343,8 +343,9 @@ public class VentasImpresionController : ControllerBase
             var totalComision = venta.Detalles
                 .Where(detalle => EstadosVentaComisionables.Contains(detalle.EstadoItem.Trim()))
                 .Where(EsDetalleComisionable)
-                .Sum(detalle => Math.Round(((detalle.Cantidad * detalle.PrecioUnitario) + (detalle.PrecioExtra ?? 0)) * ResolveCommission(
-                    detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) / 100m, 0, MidpointRounding.AwayFromZero));
+                .Sum(detalle => Math.Round((detalle.Cantidad * detalle.PrecioUnitario) * ResolveCommission(
+                    detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones) / 100m, 0, MidpointRounding.AwayFromZero)
+                    + (detalle.PrecioExtra ?? 0));
 
             return new VentaUsuarioItemDto(
                 venta.Id,
@@ -533,11 +534,12 @@ public class VentasImpresionController : ControllerBase
 
                     return venta.Detalles
                         .Where(EsDetalleComisionable)
-                        .Sum(detalle => Math.Round(((detalle.Cantidad * detalle.PrecioUnitario) + (detalle.PrecioExtra ?? 0)) * ResolveCommission(
+                        .Sum(detalle => Math.Round((detalle.Cantidad * detalle.PrecioUnitario) * ResolveCommission(
                             detalle.ProductoId,
                             perfilComisionId,
                             venta.FechaCreacion,
-                            comisionesDelMes) / 100m, 0, MidpointRounding.AwayFromZero));
+                            comisionesDelMes) / 100m, 0, MidpointRounding.AwayFromZero)
+                            + (detalle.PrecioExtra ?? 0));
                 })))
             .OrderByDescending(x => x.Monto)
             .Take(10)

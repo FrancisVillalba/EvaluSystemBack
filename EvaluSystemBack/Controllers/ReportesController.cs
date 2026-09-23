@@ -638,7 +638,7 @@ public class ReportesController : ControllerBase
                     group.Key,
                     vendedores.GetValueOrDefault(group.Key, $"Usuario {group.Key}"),
                     pedidoIds.Count,
-                    ventas.Where(x => pedidoIds.Contains(x.Id)).Sum(x => x.TotalVenta),
+                    detalles.Sum(x => x.TotalDetalle),
                     detalles.Sum(x => x.ComisionTotal),
                     detalles);
             })
@@ -696,10 +696,11 @@ public class ReportesController : ControllerBase
         bool incluirExtra)
     {
         var precioExtra = detalle.PrecioExtra ?? 0;
-        var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
+        var totalDetalle = detalle.Cantidad * detalle.PrecioUnitario;
         var comisionUnitario = ResolveComision(detalle.ProductoId, usuarioComisionId, venta.FechaCreacion, perfilesPorUsuario, comisiones);
-        var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (incluirExtra ? precioExtra : 0);
-        var comisionTotal = Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
+        var baseComision = detalle.Cantidad * detalle.PrecioUnitario;
+        var comision = Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
+        var comisionTotal = comision + (incluirExtra ? precioExtra : 0);
 
         return new ReporteComisionDetalleDto(
             venta.Id,
@@ -711,6 +712,7 @@ public class ReportesController : ControllerBase
             incluirExtra ? precioExtra : 0,
             totalDetalle,
             comisionUnitario,
+            comision,
             comisionTotal);
     }
 
@@ -724,10 +726,11 @@ public class ReportesController : ControllerBase
         int? vendedorOrigenId = null)
     {
         var precioExtra = detalle.PrecioExtra ?? 0;
-        var totalDetalle = detalle.PrecioTotal ?? (detalle.Cantidad * detalle.PrecioUnitario + precioExtra);
+        var totalDetalle = detalle.Cantidad * detalle.PrecioUnitario;
         var comisionUnitario = ResolveComisionPorPerfil(detalle.ProductoId, perfilComisionId, venta.FechaCreacion, comisiones);
-        var baseComision = detalle.Cantidad * detalle.PrecioUnitario + (incluirExtra ? precioExtra : 0);
-        var comisionTotal = Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
+        var baseComision = detalle.Cantidad * detalle.PrecioUnitario;
+        var comision = Math.Round(baseComision * comisionUnitario / 100m, 0, MidpointRounding.AwayFromZero);
+        var comisionTotal = comision + (incluirExtra ? precioExtra : 0);
 
         return new ReporteComisionDetalleDto(
             venta.Id,
@@ -739,6 +742,7 @@ public class ReportesController : ControllerBase
             incluirExtra ? precioExtra : 0,
             totalDetalle,
             comisionUnitario,
+            comision,
             comisionTotal,
             vendedorOrigen,
             vendedorOrigenId);
@@ -785,7 +789,7 @@ public class ReportesController : ControllerBase
     {
         var rows = new List<string[]>
         {
-            new[] { "Vendedor", "Pedido", "Fecha", "Cliente", "Producto", "Cantidad", "Precio unitario", "Precio extra", "Total detalle", "Comision unitario", "Comision total" }
+            new[] { "Vendedor", "Pedido", "Fecha", "Cliente", "Producto", "Cantidad", "Precio unitario", "Precio extra", "Total detalle", "Comision unitario", "Comision", "Comision total" }
         };
 
         foreach (var seller in report.Vendedores)
@@ -817,6 +821,7 @@ public class ReportesController : ControllerBase
                 Money(detail.PrecioExtra),
                 Money(detail.TotalDetalle),
                 detail.ComisionUnitario.ToString("N2", CultureInfo.CurrentCulture) + " %",
+                Money(detail.Comision),
                 Money(detail.ComisionTotal)
             }));
         }
@@ -1764,7 +1769,7 @@ public class ReportesController : ControllerBase
 
             foreach (var detail in group.OrderBy(x => x.Fecha).ThenBy(x => x.Cliente))
             {
-                var comisionProducto = detail.ComisionTotal;
+                var comisionProducto = detail.Comision;
                 var values = isTeamLeaderReport
                     ? new[]
                     {
@@ -1793,7 +1798,7 @@ public class ReportesController : ControllerBase
                 y -= 13;
             }
 
-            var subtotalComisionProducto = group.Sum(x => x.ComisionTotal);
+            var subtotalComisionProducto = group.Sum(x => x.Comision);
             var subtotalValues = isTeamLeaderReport
                 ? new[]
                 {

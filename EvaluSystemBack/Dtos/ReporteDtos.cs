@@ -23,6 +23,7 @@ public record ReporteComisionDetalleDto(
     decimal PrecioExtra,
     decimal TotalDetalle,
     decimal ComisionUnitario,
+    decimal Comision,
     decimal ComisionTotal,
     string? VendedorOrigen = null,
     int? VendedorOrigenId = null);
