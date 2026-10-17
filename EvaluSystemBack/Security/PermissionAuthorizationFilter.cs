@@ -29,6 +29,7 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
         ["Delivery"] = "Envio",
         ["Control"] = "Control",
         ["Reportes"] = "Reportes",
+        ["Pagos"] = "Pagos",
         ["VentasImpresionCab"] = "Pedidos",
         ["VentasImpresionDet"] = "Pedidos",
         ["Archivos"] = "Pedidos",
@@ -84,7 +85,8 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
             return;
         }
 
-        if (formulario.Equals("Pagos", StringComparison.OrdinalIgnoreCase)
+        if (descriptor.ControllerName.Equals("PagosVentasImpresion", StringComparison.OrdinalIgnoreCase)
+            && formulario.Equals("Pagos", StringComparison.OrdinalIgnoreCase)
             && !await _context.Formularios.AsNoTracking().AnyAsync(
                 x => x.Nombre == "Pagos" && x.Estado))
         {

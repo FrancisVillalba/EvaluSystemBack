@@ -45,8 +45,19 @@ public class EvaluSystemDbContext : DbContext
     public DbSet<VentaImpresionCab> VentasImpresionCab => Set<VentaImpresionCab>();
     public DbSet<VentaImpresionDet> VentasImpresionDet => Set<VentaImpresionDet>();
 
+    public DbSet<RevisionPago> RevisionesPago => Set<RevisionPago>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<RevisionPago>(entity =>
+        {
+            entity.ToTable("RevisionPago");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Estado).HasMaxLength(20).IsRequired();
+            entity.Property(x => x.Comentario).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.PedidoId, x.Id });
+            entity.HasOne<VentaImpresionCab>().WithMany().HasForeignKey(x => x.PedidoId).OnDelete(DeleteBehavior.NoAction);
+        });
         modelBuilder.Entity<Ciudad>(entity =>
         {
             entity.ToTable("Ciudad");
