@@ -178,6 +178,8 @@ public class PermissionAuthorizationFilter : IAsyncAuthorizationFilter
                 => "Reporte de envio de pedidos",
             "GetResumenGerencial"
                 => "Reporte resumen gerencial",
+            "GetVentasProducto" or "GetVentasProductoOpciones"
+                => "Reporte de ventas por producto",
             _ => "Reportes"
         };
     }

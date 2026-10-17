@@ -31,6 +31,78 @@ public class ReportesController : ControllerBase
         _environment = environment;
     }
 
+    [HttpGet("ventas-producto/opciones")]
+    public async Task<IActionResult> GetVentasProductoOpciones(CancellationToken cancellationToken)
+    {
+        var productos = await _context.Productos.AsNoTracking().OrderBy(x => x.Nombre)
+            .Select(x => new { x.Id, x.Nombre }).ToListAsync(cancellationToken);
+        var usuarios = await _context.Usuarios.AsNoTracking().Include(x => x.Persona).ToListAsync(cancellationToken);
+        var vendedores = usuarios.Select(x => new { x.Id, Nombre = NombreVendedorProducto(x) }).OrderBy(x => x.Nombre);
+        return Ok(new { productos, vendedores });
+    }
+
+    [HttpGet("ventas-producto")]
+    public async Task<IActionResult> GetVentasProducto(DateTime? dateFrom = null, DateTime? dateTo = null,
+        int? vendedorId = null, int? productoId = null, CancellationToken cancellationToken = default,
+        int page = 1, int pageSize = 10)
+    {
+        var from = (dateFrom ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1)).Date;
+        var to = (dateTo ?? DateTime.Today).Date;
+        if (from > to || to == DateTime.MaxValue.Date)
+            return BadRequest(new { message = "El rango de fechas no es válido." });
+        if (productoId is <= 0 || vendedorId is <= 0)
+            return BadRequest(new { message = "Seleccione un producto y vendedor válidos." });
+        if (page < 1 || pageSize is < 1 or > 100)
+            return BadRequest(new { message = "La página o cantidad de filas no es válida." });
+        var end = to.AddDays(1);
+        var ventas = await _context.VentasImpresionCab.AsNoTracking()
+            .Include(x => x.Cliente).Include(x => x.EstadoVenta).Include(x => x.EstadoPago)
+            .Include(x => x.Detalles).ThenInclude(x => x.Producto)
+            .Where(x => x.FechaCreacion >= from && x.FechaCreacion < end && !x.Reposicion)
+            .Where(x => !vendedorId.HasValue || x.VendedorId == vendedorId.Value)
+            .Where(x => !productoId.HasValue || x.Detalles.Any(d => d.ProductoId == productoId.Value))
+            .ToListAsync(cancellationToken);
+        ventas = ventas.Where(x => !IsExcludedFromPaymentReport(x.EstadoVentaId, x.EstadoVenta?.Nombre))
+            .Where(x => x.EstadoVentaId != "PC" && !(x.EstadoVenta?.Nombre ?? "").Contains("rechaz", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var ids = ventas.Select(x => x.VendedorId).Distinct().ToArray();
+        var usuarios = await _context.Usuarios.AsNoTracking().Include(x => x.Persona)
+            .Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, NombreVendedorProducto, cancellationToken);
+        var perfiles = await _context.UsuarioPerfiles.AsNoTracking().Include(x => x.Perfil)
+            .Where(x => ids.Contains(x.UsuarioId) && x.Estado && x.Perfil != null && x.Perfil.Estado)
+            .ToListAsync(cancellationToken);
+        var perfilesPorUsuario = perfiles.GroupBy(x => x.UsuarioId)
+            .ToDictionary(x => x.Key, x => x.Select(p => p.PerfilId).ToList());
+        var comisiones = await _context.ProductoComisiones.AsNoTracking().Where(x => x.Estado)
+            .OrderBy(x => x.Id).ToListAsync(cancellationToken);
+        var detalles = ventas.SelectMany(v => v.Detalles
+            .Where(d => (!productoId.HasValue || d.ProductoId == productoId.Value) && d.EstadoItem.Trim() != "XX" && d.EstadoItem.Trim() != "RE")
+            .Select(d =>
+            {
+                var eligible = EsVentaComisionable(v) && EsDetalleComisionable(d);
+                var commission = BuildComisionDetalle(v, d, v.VendedorId, perfilesPorUsuario, comisiones, incluirExtra: true);
+                return new ReporteVentaProductoDto(d.Id, v.Id, v.FechaCreacion, v.Cliente?.Nombre ?? $"Cliente {v.ClienteId}",
+                    v.Cliente?.Documento, v.Cliente?.NroTelefono, v.Cliente?.Email,
+                    usuarios.GetValueOrDefault(v.VendedorId, $"Usuario {v.VendedorId}"),
+                    d.Producto?.Nombre ?? $"Producto {d.ProductoId}", d.Cantidad, d.PrecioUnitario, d.PrecioExtra ?? 0,
+                    d.PrecioTotal ?? d.Cantidad * d.PrecioUnitario + (d.PrecioExtra ?? 0),
+                    eligible ? commission.ComisionUnitario : 0, eligible ? commission.ComisionTotal : 0,
+                    eligible, v.EstadoVenta?.Nombre ?? v.EstadoVentaId, v.EstadoPago?.Nombre ?? v.EstadoPagadoId ?? "Sin estado");
+            })).OrderByDescending(x => x.Fecha).ThenByDescending(x => x.PedidoId).ThenBy(x => x.DetalleId).ToList();
+        var totalItems = detalles.Count;
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+        page = Math.Min(page, totalPages);
+        return Ok(new { fechaDesde = from, fechaHasta = to, cantidadPedidos = detalles.Select(x => x.PedidoId).Distinct().Count(),
+            cantidad = detalles.Sum(x => x.Cantidad), totalVenta = detalles.Sum(x => x.MontoVenta),
+            totalComision = detalles.Sum(x => x.Comision), totalItems, totalPages, page, pageSize,
+            detalles = detalles.Skip((page - 1) * pageSize).Take(pageSize).ToList() });
+    }
+    private static string NombreVendedorProducto(Usuario usuario)
+    {
+        var nombre = string.Join(" ", new[] { usuario.Persona?.PrimerNombre, usuario.Persona?.PrimerApellido }
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()));
+        return string.IsNullOrWhiteSpace(nombre) ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}" : nombre;
+    }
     [HttpGet("comisiones-vendedores")]
     public async Task<ActionResult<ReporteComisionesDto>> GetComisionesVendedores(
         [FromQuery] DateTime? dateFrom = null,
