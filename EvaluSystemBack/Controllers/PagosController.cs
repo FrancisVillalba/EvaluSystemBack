@@ -2,8 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Security.Claims;
 using EvaluSystemBack.Data;
-using System.IO.Compression;
-using System.Net;
+using System.Globalization;
+
 using System.Text;
 using System.Text.Json;
 using EvaluSystemBack.Models;
@@ -24,36 +24,43 @@ public class PagosController : ControllerBase
     public record PagoComprobanteDto(DateTime Fecha, decimal Monto, string Ruta, string Nombre);
     public record RevisionPagoRequest([Required] string Estado, [MaxLength(2000)] string? Comentario);
     public record RevisionPagoRow(string Cliente, string? Telefono, PagoPedidoDto Pedido,
-        string Estado, string? Comentario, int? UsuarioId, DateTime? FechaRevision);
+        string Estado, string? Comentario, int? UsuarioId, DateTime? FechaRevision, string? UsuarioNombre);
 
-    [HttpGet("revision-pagos/problemas/excel")]
-    public async Task<IActionResult> ExportProblemasPago(DateTime? dateFrom = null, DateTime? dateTo = null, string? cliente = null)
+    [HttpGet("opciones")]
+    public async Task<IActionResult> GetOpciones(CancellationToken cancellationToken)
     {
-        var result = await GetRevisionPagos(dateFrom, dateTo, cliente, "PROBLEMA");
-        if (result is not OkObjectResult { Value: IEnumerable<RevisionPagoRow> problemas }) return result;
-        var rows = new List<string[]> { new[] { "Cliente", "Teléfono", "Pedido", "Fecha del pedido", "Vendedor",
-            "Total (Gs.)", "Pagado (Gs.)", "Problema", "Fecha de revisión", "Usuario" } };
-        rows.AddRange(problemas.Select(r => new[] { r.Cliente, r.Telefono ?? "", r.Pedido.PedidoId.ToString(),
-            r.Pedido.Fecha.ToString("yyyy-MM-dd HH:mm"), r.Pedido.Vendedor,
-            r.Pedido.TotalVenta.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            r.Pedido.MontoPagado.ToString(System.Globalization.CultureInfo.InvariantCulture), r.Comentario ?? "",
-            r.FechaRevision?.ToString("yyyy-MM-dd HH:mm") ?? "", r.UsuarioId?.ToString() ?? "" }));
-        return Ok(new { FileName = $"problemas-pagos-{DateTime.Now:yyyyMMddHHmm}.xlsx",
-            ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            Bytes = Convert.ToBase64String(BuildExcelWorkbook(rows, "Problemas de pagos")) });
+        var formasPago = await _context.FormasPago.AsNoTracking().Where(x => x.Estado != false)
+            .OrderBy(x => x.Nombre).Select(x => new { x.Id, x.Nombre }).ToListAsync(cancellationToken);
+        var usuarios = await _context.Usuarios.AsNoTracking().Include(x => x.Persona)
+            .Where(x => x.Estado != false).ToListAsync(cancellationToken);
+        var vendedores = usuarios.Select(x => new { x.Id, Nombre = NombreUsuario(x) }).OrderBy(x => x.Nombre);
+        return Ok(new { formasPago, vendedores });
     }
 
+    [HttpGet("revision-pagos/incorrectos/pdf")]
+    public async Task<IActionResult> ExportProblemasPago(DateTime? dateFrom = null, DateTime? dateTo = null, string? cliente = null,
+        string? formaPagoId = null, int? vendedorId = null)
+    {
+        var result = await GetRevisionPagos(dateFrom, dateTo, cliente, "PROBLEMA", formaPagoId, vendedorId);
+        if (result is not OkObjectResult { Value: IEnumerable<RevisionPagoRow> problemas }) return result;
+        return Ok(new { FileName = $"pagos-incorrectos-{DateTime.Now:yyyyMMddHHmm}.pdf",
+            ContentType = "application/pdf",
+            Bytes = Convert.ToBase64String(BuildIncorrectosPdf(problemas.ToList())) });
+    }
     [HttpGet("revision-pagos")]
     public async Task<IActionResult> GetRevisionPagos(DateTime? dateFrom = null, DateTime? dateTo = null,
-        string? cliente = null, string estado = "PENDIENTE")
+        string? cliente = null, string estado = "PENDIENTE", string? formaPagoId = null, int? vendedorId = null)
     {
         if (dateFrom > dateTo) return BadRequest(new { message = "El rango de fechas no es válido." });
         if (estado is not ("PENDIENTE" or "PROBLEMA" or "OK")) return BadRequest(new { message = "Estado inválido." });
         var from = (dateFrom ?? new DateTime(1900, 1, 1)).Date;
         var toExclusive = (dateTo ?? DateTime.Today).Date.AddDays(1);
+        var paymentMethod = formaPagoId?.Trim();
         var ventas = await _context.VentasImpresionCab.AsNoTracking()
             .Include(x => x.Cliente).Include(x => x.EstadoVenta).Include(x => x.EstadoPago).Include(x => x.Pagos)
             .Where(x => x.EstadoPagadoId == "P3" && !x.Reposicion)
+            .Where(x => string.IsNullOrWhiteSpace(paymentMethod) || x.FormaPagoId == paymentMethod)
+            .Where(x => !vendedorId.HasValue || x.VendedorId == vendedorId.Value)
             .Where(x => x.FechaCreacion >= from && x.FechaCreacion < toExclusive)
             .ToListAsync();
         var search = cliente?.Trim();
@@ -68,6 +75,9 @@ public class PagosController : ControllerBase
         var revisiones = await _context.RevisionesPago.AsNoTracking()
             .Where(x => !_context.RevisionesPago.Any(y => y.PedidoId == x.PedidoId && y.Id > x.Id))
             .ToDictionaryAsync(x => x.PedidoId);
+        var revisorIds = revisiones.Values.Select(x => x.UsuarioId).Distinct().ToArray();
+        var revisores = await _context.Usuarios.AsNoTracking().Include(x => x.Persona)
+            .Where(x => revisorIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, NombreRevisor);
         var rows = ventas.Select(v =>
         {
             revisiones.TryGetValue(v.Id, out var revision);
@@ -76,9 +86,17 @@ public class PagosController : ControllerBase
                 v.MontoPagado ?? 0, Math.Max(v.TotalVenta - (v.MontoPagado ?? 0), 0),
                 v.EstadoPago?.Nombre ?? "Pagado", BuildTransferProofs(v, formasTransferencia));
             return new RevisionPagoRow(v.Cliente?.Nombre ?? $"Cliente {v.ClienteId}", v.Cliente?.NroTelefono,
-                pedido, revision?.Estado ?? "PENDIENTE", revision?.Comentario, revision?.UsuarioId, revision?.Fecha);
+                pedido, revision?.Estado ?? "PENDIENTE", revision?.Comentario, revision?.UsuarioId, revision?.Fecha,
+                revision is null ? null : revisores.GetValueOrDefault(revision.UsuarioId, "Usuario no disponible"));
         }).Where(x => x.Estado == estado).OrderByDescending(x => x.Pedido.Fecha).ToList();
         return Ok(rows);
+    }
+
+    private static string NombreRevisor(Usuario usuario)
+    {
+        var nombre = string.Join(" ", new[] { usuario.Persona?.PrimerNombre, usuario.Persona?.SegundoNombre }
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!.Trim()));
+        return string.IsNullOrWhiteSpace(nombre) ? usuario.NombreUsuario ?? "Usuario sin nombre" : nombre;
     }
 
     [HttpPut("revision-pagos/{pedidoId:int}")]
@@ -88,7 +106,7 @@ public class PagosController : ControllerBase
             return Unauthorized();
         if (request.Estado is not ("OK" or "PROBLEMA")) return BadRequest(new { message = "Estado inválido." });
         if (request.Estado == "PROBLEMA" && string.IsNullOrWhiteSpace(request.Comentario))
-            return BadRequest(new { message = "Escriba un comentario sobre el problema." });
+            return BadRequest(new { message = "Escriba el motivo por el que el pago es incorrecto." });
         await using var transaction = await _context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         var venta = await _context.VentasImpresionCab.AsNoTracking().FirstOrDefaultAsync(x => x.Id == pedidoId, cancellationToken);
         if (venta is null) return NotFound();
@@ -100,55 +118,119 @@ public class PagosController : ControllerBase
         await transaction.CommitAsync(cancellationToken);
         return NoContent();
     }
-    private static byte[] BuildExcelWorkbook(IReadOnlyList<string[]> rows, string sheetName)
+    private static byte[] BuildIncorrectosPdf(IReadOnlyList<RevisionPagoRow> pagos)
     {
-        using var stream = new MemoryStream();
-        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        var culture = CultureInfo.GetCultureInfo("es-PY");
+        var widths = new[] { 85, 135, 100, 90, 220, 140 };
+        var headers = new[] { "Pedido / fecha", "Cliente / vendedor", "Total (Gs.)", "Pagado (Gs.)", "Motivo del pago incorrecto", "Revisión" };
+        const int pageLines = 32;
+        static string Hex(string value) => Convert.ToHexString(Encoding.Latin1.GetBytes(value));
+        static string[] Wrap(string value, int width)
         {
-            AddZipEntry(archive, "[Content_Types].xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-                    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-                    <Default Extension="xml" ContentType="application/xml"/>
-                    <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-                    <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-                    <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-                </Types>
-                """);
-            AddZipEntry(archive, "_rels/.rels", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-                </Relationships>
-                """);
-            AddZipEntry(archive, "xl/workbook.xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-                    <sheets><sheet name="Comisiones" sheetId="1" r:id="rId1"/></sheets>
-                </workbook>
-                """.Replace("Comisiones", WebUtility.HtmlEncode(sheetName)));
-            AddZipEntry(archive, "xl/_rels/workbook.xml.rels", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                    <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-                    <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-                </Relationships>
-                """);
-            AddZipEntry(archive, "xl/styles.xml", """
-                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                    <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
-                    <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
-                    <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
-                    <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-                    <cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>
-                    <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-                </styleSheet>
-                """);
-            AddZipEntry(archive, "xl/worksheets/sheet1.xml", BuildWorksheetXml(rows));
+            var result = new List<string>();
+            var limit = Math.Max(1, (width - 16) / 5);
+            foreach (var paragraph in value.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
+            {
+                var rest = paragraph;
+                while (rest.Length > limit)
+                {
+                    var cut = rest.LastIndexOf(' ', limit);
+                    if (cut < 1) cut = limit;
+                    result.Add(rest[..cut]);
+                    rest = rest[cut..].TrimStart();
+                }
+                result.Add(rest);
+            }
+            return result.ToArray();
         }
-
-        return stream.ToArray();
+        var pages = new List<List<(string[][] Cells, int Offset, int Count)>> { new() };
+        var used = 0;
+        foreach (var pago in pagos)
+        {
+            var values = new[] { $"#{pago.Pedido.PedidoId}\n{pago.Pedido.Fecha:dd/MM/yyyy}\n{pago.Pedido.Fecha:HH:mm}",
+                $"{pago.Cliente}\n\nVendedor:\n{pago.Pedido.Vendedor}",
+                pago.Pedido.TotalVenta.ToString("N0", culture), pago.Pedido.MontoPagado.ToString("N0", culture),
+                pago.Comentario ?? "Sin comentario", $"{pago.UsuarioNombre}\n\n{pago.FechaRevision:dd/MM/yyyy HH:mm}" };
+            var cells = values.Select((value, column) => Wrap(value, widths[column])).ToArray();
+            var height = cells.Max(x => x.Length);
+            if (height + 1 <= pageLines && used + height + 1 > pageLines) { pages.Add(new()); used = 0; }
+            for (var offset = 0; offset < height;)
+            {
+                var room = pageLines - used - 1;
+                if (room < 3) { pages.Add(new()); used = 0; room = pageLines - 1; }
+                var count = Math.Min(height - offset, room);
+                pages[^1].Add((cells, offset, count));
+                used += count + 1;
+                offset += count;
+                if (offset < height) { pages.Add(new()); used = 0; }
+            }
+        }
+        var objects = new List<string> { "", "",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>" };
+        var pageIds = new List<int>();
+        for (var index = 0; index < pages.Count; index++)
+        {
+            var pageId = objects.Count + 1;
+            pageIds.Add(pageId);
+            var contentId = pageId + 1;
+            objects.Add($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {contentId} 0 R >>");
+            var content = new StringBuilder();
+            content.AppendLine($"BT /F1 18 Tf 0.05 0.37 0.45 rg 36 552 Td <{Hex("Pagos incorrectos")}> Tj ET");
+            content.AppendLine($"BT /F2 8 Tf 0.4 0.45 0.5 rg 36 532 Td <{Hex($"EvaluSystem | Emitido: {DateTime.Now:dd/MM/yyyy HH:mm}")}> Tj ET");
+            content.AppendLine($"BT /F1 10 Tf 0.12 0.22 0.28 rg 36 507 Td <{Hex($"{pagos.Count} pagos incorrectos | Total pagado: Gs. {pagos.Sum(x => x.Pedido.MontoPagado).ToString("N0", culture)}")}> Tj ET");
+            content.AppendLine("0.05 0.37 0.45 rg 36 465 770 26 re f");
+            var x = 36;
+            for (var column = 0; column < headers.Length; column++)
+            {
+                content.AppendLine($"BT /F1 9 Tf 1 1 1 rg {x + 8} 475 Td <{Hex(headers[column])}> Tj ET");
+                x += widths[column];
+            }
+            var top = 465;
+            foreach (var row in pages[index])
+            {
+                var height = (row.Count + 1) * 12;
+                x = 36;
+                for (var column = 0; column < widths.Length; column++)
+                {
+                    if (column == 4) content.AppendLine($"0.97 0.98 0.99 rg {x} {top - height} {widths[column]} {height} re f");
+                    content.AppendLine($"0.82 0.87 0.9 RG 0.4 w {x} {top - height} {widths[column]} {height} re S");
+                    var lines = row.Cells[column].Skip(row.Offset).Take(row.Count).ToArray();
+                    if (column == 0 && row.Offset > 0) lines = new[] { row.Cells[0][0], "(continúa)" };
+                    for (var line = 0; line < lines.Length; line++)
+                    {
+                        var alignRight = column is 2 or 3;
+                        var textX = alignRight ? x + widths[column] - 8 - lines[line].Length * 4.8 : x + 8;
+                        content.AppendLine(FormattableString.Invariant($"BT /F2 8 Tf 0.12 0.22 0.28 rg {textX:0.##} {top - 16 - line * 12} Td <{Hex(lines[line])}> Tj ET"));
+                    }
+                    x += widths[column];
+                }
+                top -= height;
+            }
+            if (pagos.Count == 0) content.AppendLine($"BT /F2 10 Tf 0.4 0.45 0.5 rg 44 440 Td <{Hex("No hay pagos incorrectos para mostrar.")}> Tj ET");
+            content.AppendLine($"BT /F2 8 Tf 0.4 0.45 0.5 rg 36 28 Td <{Hex($"Página {index + 1} de {pages.Count}")}> Tj ET");
+            var streamContent = content.ToString();
+            objects.Add($"<< /Length {Encoding.ASCII.GetByteCount(streamContent)} >>\nstream\n{streamContent}endstream");
+        }
+        objects[0] = "<< /Type /Catalog /Pages 2 0 R >>";
+        objects[1] = $"<< /Type /Pages /Count {pages.Count} /Kids [{string.Join(" ", pageIds.Select(id => $"{id} 0 R"))}] >>";
+        using var output = new MemoryStream();
+        using var writer = new StreamWriter(output, Encoding.ASCII, 1024, leaveOpen: true);
+        writer.Write("%PDF-1.4\n");
+        writer.Flush();
+        var offsets = new List<long>();
+        for (var index = 0; index < objects.Count; index++)
+        {
+            offsets.Add(output.Position);
+            writer.Write($"{index + 1} 0 obj\n{objects[index]}\nendobj\n");
+            writer.Flush();
+        }
+        var xref = output.Position;
+        writer.Write($"xref\n0 {objects.Count + 1}\n0000000000 65535 f \n");
+        foreach (var offset in offsets) writer.Write($"{offset:0000000000} 00000 n \n");
+        writer.Write($"trailer\n<< /Size {objects.Count + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
+        writer.Flush();
+        return output.ToArray();
     }
 
     private static bool IsExcludedFromPaymentReport(string? estadoId, string? estado)
@@ -221,61 +303,6 @@ public class PagosController : ControllerBase
     private static string NombreUsuario(Usuario usuario)
     {
         return usuario.Persona is null ? usuario.NombreUsuario ?? $"Usuario {usuario.Id}" : NombrePersona(usuario.Persona);
-    }
-
-    private static string BuildWorksheetXml(IReadOnlyList<string[]> rows)
-    {
-        var builder = new StringBuilder();
-        builder.AppendLine("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""");
-        builder.AppendLine("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>""");
-
-        for (var rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-        {
-            builder.Append("<row r=\"").Append(rowIndex + 1).AppendLine("\">");
-
-            for (var columnIndex = 0; columnIndex < rows[rowIndex].Length; columnIndex++)
-            {
-                builder.Append("<c r=\"")
-                    .Append(CellReference(columnIndex, rowIndex + 1))
-                    .Append("\" t=\"inlineStr\"");
-
-                if (rowIndex == 0)
-                {
-                    builder.Append(" s=\"1\"");
-                }
-
-                builder.Append("><is><t>")
-                    .Append(WebUtility.HtmlEncode(rows[rowIndex][columnIndex] ?? string.Empty))
-                    .AppendLine("</t></is></c>");
-            }
-
-            builder.AppendLine("</row>");
-        }
-
-        builder.AppendLine("</sheetData></worksheet>");
-        return builder.ToString();
-    }
-
-    private static void AddZipEntry(ZipArchive archive, string path, string content)
-    {
-        var entry = archive.CreateEntry(path);
-        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
-        writer.Write(content.Trim());
-    }
-
-    private static string CellReference(int columnIndex, int rowIndex)
-    {
-        var dividend = columnIndex + 1;
-        var columnName = string.Empty;
-
-        while (dividend > 0)
-        {
-            var modulo = (dividend - 1) % 26;
-            columnName = Convert.ToChar('A' + modulo) + columnName;
-            dividend = (dividend - modulo) / 26;
-        }
-
-        return $"{columnName}{rowIndex}";
     }
 
     private static string NombrePersona(Persona persona)
